@@ -1,0 +1,20 @@
+{
+  "name": "screeps-arena",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ./scripts/build-mode.mjs beta-capture_the_flag season1-construct_and_control season1-construct_and_control-advanced season1-portal_exploration season1-portal_exploration-advanced season1-spawn_strike season1-spawn_strike-advanced tutorial",
+    "build:beta_capture_the_flag": "node ./scripts/build-mode.mjs beta-capture_the_flag",
+    "build:season1_construct_and_control": "node ./scripts/build-mode.mjs season1-construct_and_control",
+    "build:season1_construct_and_control_advanced": "node ./scripts/build-mode.mjs season1-construct_and_control-advanced",
+    "build:season1_portal_exploration": "node ./scripts/build-mode.mjs season1-portal_exploration",
+    "build:season1_portal_exploration_advanced": "node ./scripts/build-mode.mjs season1-portal_exploration-advanced",
+    "build:season1_spawn_strike": "node ./scripts/build-mode.mjs season1-spawn_strike",
+    "build:season1_spawn_strike_advanced": "node ./scripts/build-mode.mjs season1-spawn_strike-advanced",
+    "build:tutorial": "node ./scripts/build-mode.mjs tutorial"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.2"
+  }
+}
