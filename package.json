@@ -15,6 +15,7 @@
     "build:tutorial": "node ./scripts/build-mode.mjs tutorial"
   },
   "devDependencies": {
+    "prettier": "^3.7.4",
     "typescript": "^5.4.2"
   }
 }

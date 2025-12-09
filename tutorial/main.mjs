@@ -1,15 +1,9 @@
 // Auto-generated via npm run build. Edit files in src/ only.
-import { createConstructionSite } from 'game/utils';
-import {} from 'game/utils';
-import {} from 'game/prototypes';
-import {} from 'game/constants';
-import { prototypes, utils, constants, getObjectsByPrototype, Creep, getTicks, RESOURCE_ENERGY, ERR_NOT_IN_RANGE, HARVEST_POWER, StructureTower, StructureContainer } from 'game';
 class CreepState {
 }
 var creepState;
 export function loop() {
     // Your code goes here
-    //
     console.log("hi");
     console.log("hi");
     console.log("hi");
