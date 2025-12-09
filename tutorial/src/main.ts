@@ -25,6 +25,10 @@ export function loop(): void {
 
 
     console.log("hi");
+    console.log("hi");
+    console.log("hi");
+    console.log("hi");
+    console.log("hi");
 
 
 

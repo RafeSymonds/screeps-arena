@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+# Get the lifecycle name, like "build:tutorial"
+SCRIPT_NAME="${npm_lifecycle_event:-}"
+
+# Extract substring after colon
+TARGET="${SCRIPT_NAME#*:}"
+
+if [[ -z "$TARGET" || "$TARGET" == "$SCRIPT_NAME" ]]; then
+    echo "❌ Usage: npm run build:<target>"
+    exit 1
+fi
+
+echo "▶ Running npm run $TARGET ..."
+npm run "$TARGET"

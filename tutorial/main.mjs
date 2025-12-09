@@ -11,6 +11,10 @@ export function loop() {
     // Your code goes here
     //
     console.log("hi");
+    console.log("hi");
+    console.log("hi");
+    console.log("hi");
+    console.log("hi");
     // var constructionSite = utils.getObjectsByPrototype(prototypes.ConstructionSite).find(i => i.my)
     // if(!constructionSite) {
     //         utils.createConstructionSite({x:50,y:55}, prototypes.StructureTower);

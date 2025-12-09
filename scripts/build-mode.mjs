@@ -1,6 +1,27 @@
 import { spawnSync } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+
+const repoRoot = process.cwd();
+const windowsCopyRoot =
+  process.env.WINDOWS_ARENA_COPY_PATH ?? '/mnt/c/Users/rafes/ScreepsArena';
+
+async function copyToWindows(outputFile, contents) {
+  if (!windowsCopyRoot) {
+    return;
+  }
+
+  const relativeOutput = path.relative(repoRoot, outputFile);
+  const windowsTarget = path.join(windowsCopyRoot, relativeOutput);
+
+  try {
+    await mkdir(path.dirname(windowsTarget), { recursive: true });
+    await writeFile(windowsTarget, contents, 'utf8');
+    console.log(`Copied ${relativeOutput} -> ${windowsTarget}`);
+  } catch (error) {
+    console.warn(`Failed to copy ${relativeOutput} to ${windowsTarget}: ${error.message}`);
+  }
+}
 
 async function buildMode(modeDir) {
   const projectDir = path.resolve(modeDir);
@@ -20,8 +41,10 @@ async function buildMode(modeDir) {
   const outputFile = path.join(projectDir, 'main.mjs');
   const compiled = await readFile(distFile, 'utf8');
   const header = '// Auto-generated via npm run build. Edit files in src/ only.\n';
-  await writeFile(outputFile, `${header}${compiled}`, 'utf8');
+  const outputContents = `${header}${compiled}`;
+  await writeFile(outputFile, outputContents, 'utf8');
   console.log(`Created ${path.relative(process.cwd(), outputFile)}`);
+  await copyToWindows(outputFile, outputContents);
 }
 
 async function main() {
