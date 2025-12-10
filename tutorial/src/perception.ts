@@ -1,28 +1,32 @@
 import { getTicks } from "game"
 
-import { Creep } from "game/prototypes"
 import { get_enemy_creeps, get_my_creeps } from "./utils"
 import { findInRange } from "game/utils"
+import type { Position } from "game/prototypes/game-object"
 
-export class GameReport {
-    myCreeps: Creep[]
-    enemyCreeps: Creep[]
+import type { GameState } from "./types"
 
-    alliesNearCenter: number
-    enemiesNearCenter: number
+export function scanPerception(): GameState {
+    const CENTER_POS: Position = { x: 50, y: 50 }
 
-    time: number
+    const CENTER_RADIUS = 10
 
-    constructor() {
-        this.myCreeps = get_my_creeps()
+    const myCreeps = get_my_creeps()
+    const enemyCreeps = get_enemy_creeps()
 
-        this.enemyCreeps = get_enemy_creeps()
+    const alliesCenter = findInRange(CENTER_POS, myCreeps, CENTER_RADIUS).length
+    const enemiesCenter = findInRange(CENTER_POS, enemyCreeps, CENTER_RADIUS).length
 
-        let creepsAtCenter: Creep[] = findInRange({ x: 50, y: 50 }, [], 10)
+    return {
+        myCreeps: myCreeps.length,
+        enemyCreeps: enemyCreeps.length,
 
-        this.alliesNearCenter = creepsAtCenter.filter((creep) => creep.my).length
-        this.enemiesNearCenter = creepsAtCenter.length - this.alliesNearCenter
+        alliesNearCenter: alliesCenter,
+        enemiesNearCenter: enemiesCenter,
 
-        this.time = getTicks()
+        centerControlled: alliesCenter > enemiesCenter,
+        outnumberedAtCenter: alliesCenter < enemiesCenter,
+
+        time: getTicks(),
     }
 }

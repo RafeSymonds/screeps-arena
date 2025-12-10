@@ -1,7 +1,12 @@
-import { } from 'game/utils';
-import { } from 'game/prototypes';
-import { } from 'game/constants';
+import { objectiveManager } from "./objectiveManager"
+import { scanPerception } from "./perception"
+import { squadManager } from "./squadManager"
+import { evaluateStrategy } from "./strategy"
 
 export function loop(): void {
-    // Your code goes here
+    const state = scanPerception()
+    const strategy = evaluateStrategy(state)
+
+    const directive = squadManager(state)
+    const objective = objectiveManager(state, strategy)
 }
