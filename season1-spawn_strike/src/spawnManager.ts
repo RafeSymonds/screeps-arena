@@ -1,7 +1,6 @@
-// managers/spawnManager.ts
 import type { GameState } from "./types"
 import { StrategyState } from "./types"
-import { get_my_creeps, get_my_spawn } from "./utils"
+import { get_my_spawn } from "./utils"
 
 import { ATTACK, MOVE } from "game"
 
@@ -16,7 +15,7 @@ export function spawnManager(state: GameState, strategy: StrategyState) {
     if (myUnits >= MAX_UNITS) return
 
     // Simple fighter for now
-    const body = [ATTACK, ATTACK, MOVE]
+    const body = [MOVE, MOVE, ATTACK, ATTACK]
 
     spawn.spawnCreep(body)
 }

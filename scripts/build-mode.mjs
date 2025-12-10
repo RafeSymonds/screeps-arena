@@ -1,10 +1,19 @@
 import { spawnSync } from 'node:child_process';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const repoRoot = process.cwd();
 const windowsCopyRoot =
   process.env.WINDOWS_ARENA_COPY_PATH ?? '/mnt/c/Users/rafes/ScreepsArena';
+
+async function fileExists(targetPath) {
+  try {
+    await access(targetPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 async function copyToWindows(outputFile, contents) {
   if (!windowsCopyRoot) {
@@ -37,8 +46,27 @@ async function buildMode(modeDir) {
     process.exit(code);
   }
 
-  const distFile = path.join(projectDir, 'dist', 'main.js');
+  const rollupConfig = path.join(projectDir, 'rollup.config.mjs');
   const outputFile = path.join(projectDir, 'main.mjs');
+
+  if (await fileExists(rollupConfig)) {
+    const rollup = spawnSync('npx', ['rollup', '--config', rollupConfig], {
+      stdio: 'inherit'
+    });
+
+    if (rollup.status !== 0) {
+      const code = rollup.status ?? 1;
+      console.error(`rollup failed for ${modeDir}`);
+      process.exit(code);
+    }
+
+    const bundled = await readFile(outputFile, 'utf8');
+    console.log(`Bundled ${path.relative(process.cwd(), outputFile)} via Rollup`);
+    await copyToWindows(outputFile, bundled);
+    return;
+  }
+
+  const distFile = path.join(projectDir, 'dist', 'main.js');
   const compiled = await readFile(distFile, 'utf8');
   const header = '// Auto-generated via npm run build. Edit files in src/ only.\n';
   const outputContents = `${header}${compiled}`;

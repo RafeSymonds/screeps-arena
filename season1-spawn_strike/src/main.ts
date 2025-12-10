@@ -11,4 +11,6 @@ export function loop(): void {
     spawnManager(state, strategy)
     const directive = squadManager(state)
     const objective = objectiveManager(state, strategy)
+
+    console.log(state, directive, objective)
 }
