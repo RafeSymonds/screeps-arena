@@ -1,3 +1,5 @@
+import { GameReport } from "./perception"
+
 class CreepState {}
 var creepState: CreepState
 
@@ -8,6 +10,8 @@ export function loop(): void {
     console.log("hi")
     console.log("hi")
     console.log("hi")
+
+    let report = new GameReport()
 
     // var constructionSite = utils.getObjectsByPrototype(prototypes.ConstructionSite).find(i => i.my)
     // if(!constructionSite) {
