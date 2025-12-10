@@ -26,6 +26,12 @@ export interface GameState {
     time: number
 }
 
+export enum ObjectiveType {
+    OBJECTIVE_ATTACK,
+    OBJECTIVE_MOVE,
+}
+
 export interface Objective {
     goal: Position
+    type: ObjectiveType
 }

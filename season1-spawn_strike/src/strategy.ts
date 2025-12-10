@@ -1,14 +1,17 @@
 import type { GameState } from "./types"
 import { StrategyState } from "./types"
 
-export function evaluateStrategy(state: GameState): StrategyState {
+export function evaluateStrategy(state: GameState, previousStrategy: StrategyState): StrategyState {
     // Highest priority: protect our base
     // if (state.enemiesNearSpawn > 0) {
     //     return StrategyState.DEFEND_SPAWN
     // }
 
     // We do not hold center → take it
-    if (!state.centerControlled) {
+    if (
+        (previousStrategy === StrategyState.ATTACK_SPAWN && state.outnumberedAtCenter) ||
+        (previousStrategy !== StrategyState.ATTACK_SPAWN && !state.centerControlled)
+    ) {
         return StrategyState.TAKE_CENTER
     }
 
@@ -19,6 +22,5 @@ export function evaluateStrategy(state: GameState): StrategyState {
         return StrategyState.ATTACK_SPAWN
     }
 
-    // Holding center but not enough advantage yet
-    return StrategyState.HOLD_CENTER
+    return previousStrategy
 }
