@@ -9,7 +9,8 @@ RUN_DIR="$ROOT/.run"
 PID_FILE="$RUN_DIR/watch.pid"
 LOG_FILE="$RUN_DIR/watch.log"
 ARENAS_SRC="$ROOT/src/arenas"
-GAME_DIR="${ARENA_GAME_DIR:-$HOME/ScreepsArena}"
+# Kept inside the repo, not under $HOME; see game/.gitignore.
+GAME_DIR="${ARENA_GAME_DIR:-$ROOT/game}"
 # The installed client, which ships both the typings and the reference docs.
 APP_DIR="${ARENA_APP_DIR:-$HOME/Library/Application Support/Steam/steamapps/common/ScreepsArena/screeps_arena.app/Contents/Resources/app}"
 
@@ -115,7 +116,7 @@ cmd_deploy() {
     [[ -n "${1:-}" && "$name" != *"$1"* ]] && continue
     [[ -f "$dir/main.mjs" ]] || continue
     if [[ ! -d "$GAME_DIR/$name" ]]; then
-      echo "skip $name: no folder at $GAME_DIR/$name (open the arena in the client once)"
+      echo "skip $name: no folder at $GAME_DIR/$name (create it and point the client at it)"
       continue
     fi
     cp "$dir/main.mjs" "$GAME_DIR/$name/main.mjs"
@@ -180,7 +181,7 @@ export function loop(): void {
 }
 TS
   echo "created src/arenas/$name/main.ts"
-  [[ -d "$GAME_DIR/$name" ]] || echo "note: no client folder at $GAME_DIR/$name yet — open this arena in Screeps Arena to create it"
+  [[ -d "$GAME_DIR/$name" ]] || echo "note: no client folder at $GAME_DIR/$name yet — create it and select it in Screeps Arena"
 }
 
 usage() {
@@ -216,7 +217,7 @@ sim options
   A clean sweep is evidence the bot behaves, not proof it wins: the simulator is
   a model of the engine and the opponents are scripts. See tools/sim/README.md.
 
-env: ARENA_GAME_DIR  client script folders (default ~/ScreepsArena)
+env: ARENA_GAME_DIR  client script folders (default <repo>/game)
      ARENA_APP_DIR   installed client app dir (for typings and docs)
      ARENA_CACHE_DIR client HTTP cache (for tools/sim/extract-fixture.mjs)
 USAGE

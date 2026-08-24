@@ -45,7 +45,7 @@ bin/arena logs              # tail the watcher
 Each `src/arenas/<name>/main.ts` bundles to a single `dist/<name>/main.mjs`.
 `game/*` and `arena/*` imports are marked external so they stay as the bare
 specifiers the sandbox resolves. The build then copies the bundle to
-`~/ScreepsArena/<name>/main.mjs`. Override that root with `ARENA_GAME_DIR`.
+`game/<name>/main.mjs`. Override that root with `ARENA_GAME_DIR`.
 
 If a build warns that a client folder is missing, open that arena in Screeps
 Arena once — the client creates the folder — then rebuild.

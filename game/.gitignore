@@ -1,0 +1,7 @@
+# The Screeps Arena client owns everything under here: it writes its own
+# jsconfig.json and typings/ into whichever folder you point it at, and
+# `bin/arena deploy` drops the built main.mjs alongside them. All of it is
+# generated, so only this file is tracked — enough to keep the directory in the
+# repo so the client has somewhere to be pointed at on a fresh clone.
+*
+!.gitignore

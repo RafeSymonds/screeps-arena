@@ -40,11 +40,12 @@ typings/game/, arena/     GENERATED — vendored from the client, never hand-edi
 typings/sandbox.d.ts      HAND-WRITTEN — sandbox globals the client's typings omit
 docs/api/                 GENERATED — markdown API reference, never hand-edit
 dist/                     GENERATED — build output (gitignored)
+game/<name>/              what the client reads; contents gitignored
 tools/                    the generators behind `bin/arena sync`
 tools/sim/                offline simulator behind `bin/arena sim`
 ```
 
-`src/arenas/<name>` must match the client's folder name under `~/ScreepsArena`
+`src/arenas/<name>` must match the client's folder name under `game/`
 exactly (e.g. `season3-spawn_strike`) — that mapping is how deploy finds its
 target. If the client folder doesn't exist yet, the arena has to be opened in
 the game once to create it.

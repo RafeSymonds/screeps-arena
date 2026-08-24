@@ -1,16 +1,21 @@
 import { existsSync, mkdirSync, readdirSync, statSync, copyFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import typescript from '@rollup/plugin-typescript';
 
 const ARENAS_SRC = 'src/arenas';
 
+const ROOT = path.dirname(fileURLToPath(import.meta.url));
+
 /**
- * Where the Screeps Arena client keeps its per-arena script folders. The client
- * creates `<gameDir>/<arena-name>/main.mjs` the first time you open an arena and
- * point it at a local folder. Override with ARENA_GAME_DIR.
+ * Where the client reads each arena's script from. It is told which folder to
+ * use, and writes its own jsconfig.json and typings/ into it; builds deploy
+ * `<gameDir>/<arena-name>/main.mjs` alongside those. Kept inside the repo rather
+ * than under $HOME so the whole project travels together — the contents are
+ * generated, and game/.gitignore keeps them out of git. Override with
+ * ARENA_GAME_DIR.
  */
-const GAME_DIR = process.env.ARENA_GAME_DIR || path.join(homedir(), 'ScreepsArena');
+const GAME_DIR = process.env.ARENA_GAME_DIR || path.join(ROOT, 'game');
 
 /**
  * Only build arenas matching this substring. Passed as an environment variable
