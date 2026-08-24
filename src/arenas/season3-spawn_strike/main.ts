@@ -1,70 +1,84 @@
-import { ATTACK, CARRY, MOVE, RESOURCE_ENERGY } from 'game/constants';
-import type { Creep } from 'game/prototypes';
+import { ATTACK, MOVE } from 'game/constants';
+import type { Creep, StructureSpawn } from 'game/prototypes';
+import { getTicks } from 'game/utils';
 import { scaleBody } from '../../lib/body';
 import { energyIn, world } from '../../lib/world';
-import { runAttacker, runHauler, type Role } from './roles';
+import { reportArena, reportProgress } from './recon';
 
-/** Haulers to keep alive before spending energy on military. */
-const HAULER_TARGET = 2;
-/** Attackers to mass before pushing the enemy spawn. */
+/**
+ * Season 3 Spawn Strike (basic).
+ *
+ * Objective: destroy the enemy spawn before they destroy yours.
+ *
+ * This is a first pass written without knowing what the map holds — see recon.ts.
+ * It deliberately makes no assumption that containers or sources exist, and
+ * spends energy only on melee attackers.
+ */
+
+/** Attackers to gather before committing to the push. */
 const SQUAD_SIZE = 4;
+/** Enemies this close to our spawn are handled before anything else. */
+const DEFEND_RADIUS = 12;
+/** Hold this far off the spawn while massing, so we don't block it. */
+const RALLY_RADIUS = 5;
+/** Print a progress line this often. */
+const REPORT_EVERY = 50;
 
-// Module state survives for the whole match; the sandbox loads this file once.
-const roles = new Map<Creep['id'], Role>();
 let committed = false;
 
 export function loop(): void {
-  const w = world();
-  if (!w.mySpawn) return; // spawn destroyed — nothing left to run
+  const tick = getTicks();
+  if (tick === 1) reportArena();
 
-  const alive = new Set(w.myCreeps.map(c => c.id));
-  for (const id of roles.keys()) if (!alive.has(id)) roles.delete(id);
-
-  const haulers: Creep[] = [];
-  const attackers: Creep[] = [];
-  for (const creep of w.myCreeps) {
-    const role = roles.get(creep.id) ?? classify(creep);
-    roles.set(creep.id, role);
-    (role === 'hauler' ? haulers : attackers).push(creep);
-  }
-
-  // Commit once and stay committed; retreating mid-push just feeds kills.
-  if (!committed && attackers.length >= SQUAD_SIZE) committed = true;
-
-  produce(haulers.length);
-
-  for (const creep of haulers) runHauler(creep);
-  for (const creep of attackers) runAttacker(creep, committed, w.mySpawn);
-
-  for (const tower of w.myTowers) {
-    const target = tower.findClosestByRange(w.enemyCreeps);
-    if (target && energyIn(tower.store) >= 10) tower.attack(target);
-  }
-}
-
-/** Infer a role from the body, so creeps survive a role-map reset. */
-function classify(creep: Creep): Role {
-  return creep.body.some(p => p.type === ATTACK) ? 'attacker' : 'hauler';
-}
-
-function produce(haulerCount: number): void {
   const w = world();
   const spawn = w.mySpawn;
-  if (!spawn || spawn.spawning) return;
+  if (!spawn) return; // our spawn is gone; the match is already decided
 
-  const available = energyIn(spawn.store);
+  produce(spawn);
+  for (const creep of w.myCreeps) run(creep, spawn);
 
-  if (haulerCount < HAULER_TARGET) {
-    const body = scaleBody([CARRY, CARRY, MOVE], available, 4);
-    if (body) spawn.spawnCreep(body);
+  if (tick % REPORT_EVERY === 0) {
+    reportProgress(spawn.hits ?? 0, w.enemySpawn?.hits ?? 0, w.myCreeps.length);
+  }
+}
+
+function produce(spawn: StructureSpawn): void {
+  if (spawn.spawning) return;
+
+  // 1:1 ATTACK/MOVE moves at full speed on plains and still hits hard.
+  const body = scaleBody([ATTACK, MOVE], energyIn(spawn.store), 8);
+  if (body) spawn.spawnCreep(body);
+}
+
+function run(creep: Creep, spawn: StructureSpawn): void {
+  const w = world();
+
+  // Defence first: anything threatening our spawn outranks the push.
+  const threats = creep.findInRange(w.enemyCreeps, DEFEND_RADIUS).length
+    ? w.enemyCreeps.filter(e => e.getRangeTo(spawn) <= DEFEND_RADIUS)
+    : [];
+  if (threats.length > 0) {
+    engage(creep, creep.findClosestByPath(threats));
     return;
   }
 
-  // Bank a little before committing to a body, so we don't dribble out
-  // one-part creeps while the haulers are still filling the spawn.
-  const capacity = spawn.store.getCapacity(RESOURCE_ENERGY) ?? available;
-  if (available < Math.min(260, capacity)) return;
+  if (!committed) {
+    committed = w.myCreeps.length >= SQUAD_SIZE;
+    if (!committed) {
+      if (creep.getRangeTo(spawn) > RALLY_RADIUS) creep.moveTo(spawn);
+      return;
+    }
+  }
 
-  const body = scaleBody([ATTACK, ATTACK, MOVE], available, 6);
-  if (body) spawn.spawnCreep(body);
+  // Clear whatever blocks the push, then hit the spawn itself.
+  const nearby = creep.findInRange(w.enemyCreeps, 3);
+  if (nearby.length > 0) {
+    engage(creep, creep.findClosestByRange(nearby));
+    return;
+  }
+  if (w.enemySpawn) engage(creep, w.enemySpawn);
+}
+
+function engage(creep: Creep, target: Parameters<Creep['attack']>[0]): void {
+  if (creep.attack(target) !== 0) creep.moveTo(target);
 }

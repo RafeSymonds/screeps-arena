@@ -29,7 +29,8 @@ unverified.
 ```
 src/lib/                  shared code, imported by arenas via relative paths
 src/arenas/<name>/main.ts one bot per arena; must export loop()
-typings/                  GENERATED — vendored from the client, never hand-edit
+typings/game/, arena/     GENERATED — vendored from the client, never hand-edit
+typings/sandbox.d.ts      HAND-WRITTEN — sandbox globals the client's typings omit
 docs/api/                 GENERATED — markdown API reference, never hand-edit
 dist/                     GENERATED — build output (gitignored)
 tools/                    the generators behind `bin/arena sync`
@@ -69,6 +70,10 @@ game client, so they match the installed version.
 - CPU is wall-clock limited per tick: `arenaInfo.cpuTimeLimit` (nanoseconds,
   with a separate `cpuTimeLimitFirstTick`), measured with `getCpuTime()`.
 - `GameObject.id` is `number | string`, not just `string`.
+- `console.log` and `arenaInfo` work at runtime but are missing from the shipped
+  typings (`arenaInfo` is in the docs, just not the `.d.ts`). They are declared
+  in `typings/sandbox.d.ts`, which is hand-written and survives `bin/arena sync`.
+  Anything else the sandbox provides but the typings omit belongs there too.
 
 ## Conventions
 
@@ -78,6 +83,15 @@ game client, so they match the installed version.
 - Named exports only.
 - Shared logic goes in `src/lib/`. An arena folder holds only that arena's
   strategy.
+
+## Arenas
+
+`season3-spawn_strike` — objective is to **destroy the enemy spawn**. The
+description shown in the game client ("capture your opponent's flag") is a
+copy-paste of the Capture the Flag blurb; it is identical across seasons 1 and 3
+and is wrong. The arena's real contents are generated server-side and are not in
+the client bundle, so `recon.ts` prints a full inventory on tick 1 — read the
+client console after a match rather than guessing at the map.
 
 ## The vendored typings are patched
 

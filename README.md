@@ -83,7 +83,17 @@ breaks every `extends GameObject` inheritance (no `id`, `moveTo`,
 
 ## The included bot
 
-`src/arenas/season3-spawn_strike` is a working baseline, not a strong bot: two
-haulers keep the spawn fed from containers, everything else goes to melee
-attackers that hold near the spawn until there are four of them, then commit to
-the enemy spawn. Defense preempts the push. Treat it as a starting point.
+`src/arenas/season3-spawn_strike` is a first pass, not a strong bot. It spends
+everything on melee attackers, masses four of them near the spawn, then commits
+to the enemy spawn; enemies near our own spawn preempt the push.
+
+It assumes nothing about the map. What a Spawn Strike arena actually contains is
+generated server-side and appears in neither the docs nor the client bundle, so
+`recon.ts` prints a full inventory — every object type, counts by owner, spawn
+and source positions, the map extent, tick and CPU limits — to the client
+console on tick 1, plus a progress line every 50 ticks. Run one match, read the
+console, then tune against facts.
+
+Note the objective is to destroy the enemy spawn. The blurb the client shows for
+Spawn Strike ("capture your opponent's flag") is a copy-paste of the Capture the
+Flag description and is wrong.
