@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# Lifecycle + build wrapper for the Screeps Arena bots in this repo.
+set -Eeuo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+RUN_DIR="$ROOT/.run"
+PID_FILE="$RUN_DIR/watch.pid"
+LOG_FILE="$RUN_DIR/watch.log"
+ARENAS_SRC="$ROOT/src/arenas"
+GAME_DIR="${ARENA_GAME_DIR:-$HOME/ScreepsArena}"
+
+die() { echo "error: $*" >&2; exit 1; }
+have_deps() { [[ -d "$ROOT/node_modules" ]] || { echo "installing dependencies..."; npm install; }; }
+
+watch_pid() {
+  [[ -f "$PID_FILE" ]] || return 1
+  local pid; pid="$(cat "$PID_FILE")"
+  kill -0 "$pid" 2>/dev/null || { rm -f "$PID_FILE"; return 1; }
+  echo "$pid"
+}
+
+cmd_start() {
+  local clean=0
+  [[ "${1:-}" == "--build" ]] && clean=1
+  if pid="$(watch_pid)"; then
+    echo "already running (pid $pid). Use 'restart' to rebuild."
+    return 0
+  fi
+  have_deps
+  mkdir -p "$RUN_DIR"
+  if (( clean )); then
+    echo "clean rebuild..."
+    rm -rf "$ROOT/dist"
+    npx rollup -c
+  fi
+  npx rollup -c -w >"$LOG_FILE" 2>&1 &
+  echo $! > "$PID_FILE"
+  sleep 2
+  if pid="$(watch_pid)"; then
+    echo "watching src/ (pid $pid) — builds deploy to $GAME_DIR/<arena>/main.mjs"
+    echo "logs: bin/arena logs"
+  else
+    echo "failed to start; last output:" >&2
+    tail -20 "$LOG_FILE" >&2
+    return 1
+  fi
+}
+
+cmd_stop() {
+  if pid="$(watch_pid)"; then
+    kill "$pid" 2>/dev/null || true
+    for _ in {1..20}; do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+    kill -9 "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    echo "stopped (pid $pid)"
+  else
+    echo "not running"
+  fi
+}
+
+cmd_status() {
+  if pid="$(watch_pid)"; then
+    echo "watch: running (pid $pid)"
+  else
+    echo "watch: stopped"
+  fi
+  echo "game dir: $GAME_DIR"
+  printf '\narenas:\n'
+  for dir in "$ARENAS_SRC"/*/; do
+    [[ -d "$dir" ]] || continue
+    local name built deployed
+    name="$(basename "$dir")"
+    built="no"; [[ -f "$ROOT/dist/$name/main.mjs" ]] && built="yes"
+    deployed="no client folder"
+    [[ -d "$GAME_DIR/$name" ]] && deployed="not deployed"
+    [[ -f "$GAME_DIR/$name/main.mjs" ]] && deployed="deployed"
+    printf '  %-32s built:%-4s %s\n' "$name" "$built" "$deployed"
+  done
+}
+
+cmd_build() { have_deps; [[ -n "${1:-}" ]] && npx rollup -c -- "--arena=$1" || npx rollup -c; }
+cmd_check() { have_deps; npx tsc --noEmit && echo "types ok"; }
+cmd_fmt()   { have_deps; npx prettier --write --ignore-unknown --ignore-path .gitignore .; }
+cmd_logs()  { [[ -f "$LOG_FILE" ]] || die "no log yet — run 'bin/arena start'"; tail -f "$LOG_FILE"; }
+cmd_clean() { rm -rf "$ROOT/dist"; echo "removed dist/"; }
+
+# Copy an already-built bundle into the client folder without rebuilding.
+cmd_deploy() {
+  local any=0
+  for dir in "$ROOT/dist"/*/; do
+    [[ -d "$dir" ]] || continue
+    local name="$(basename "$dir")"
+    [[ -n "${1:-}" && "$name" != *"$1"* ]] && continue
+    [[ -f "$dir/main.mjs" ]] || continue
+    if [[ ! -d "$GAME_DIR/$name" ]]; then
+      echo "skip $name: no folder at $GAME_DIR/$name (open the arena in the client once)"
+      continue
+    fi
+    cp "$dir/main.mjs" "$GAME_DIR/$name/main.mjs"
+    echo "deployed $name -> $GAME_DIR/$name/main.mjs"
+    any=1
+  done
+  (( any )) || echo "nothing deployed — run 'bin/arena build' first"
+}
+
+# The client auto-updates its typings; pull them back into the repo so the
+# checked-in copy matches the installed game version.
+cmd_sync_typings() {
+  local src=""
+  for dir in "$GAME_DIR"/*/typings/game; do
+    [[ -d "$dir" ]] && { src="$dir"; break; }
+  done
+  [[ -n "$src" ]] || die "no typings under $GAME_DIR/*/typings/game — open an arena in the client first"
+  rsync -a --delete "$src/" "$ROOT/typings/game/"
+  # Shipped typings bug (v1.2.0): a stray top-level import turns game-object.d.ts
+  # into a module, which breaks every `extends GameObject` inheritance.
+  sed -i '' '/^import {SearchPathOptions} from "\.\.\/path-finder";$/d' \
+    "$ROOT/typings/game/prototypes/game-object.d.ts"
+  echo "typings synced from $src (patched game-object.d.ts)"
+  cmd_check
+}
+
+cmd_new() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || die "usage: bin/arena new <arena-name>   (must match the client's folder name, e.g. season3-spawn_strike)"
+  local dir="$ARENAS_SRC/$name"
+  [[ -e "$dir" ]] && die "$dir already exists"
+  mkdir -p "$dir"
+  cat > "$dir/main.ts" <<'TS'
+import { world } from '../../lib/world';
+
+export function loop(): void {
+  const w = world();
+  if (!w.mySpawn) return;
+  // Your code goes here.
+}
+TS
+  echo "created src/arenas/$name/main.ts"
+  [[ -d "$GAME_DIR/$name" ]] || echo "note: no client folder at $GAME_DIR/$name yet — open this arena in Screeps Arena to create it"
+}
+
+usage() {
+  cat <<'USAGE'
+usage: bin/arena <command>
+
+lifecycle
+  start [--build]   watch src/ and rebuild+deploy on every save (--build cleans first)
+  stop              stop the watcher
+  restart           stop, then start with a clean rebuild
+  status            watcher state plus per-arena build/deploy status
+  logs              tail the watcher log
+
+build
+  build [filter]    one-shot build of all arenas (or those matching filter)
+  deploy [filter]   copy built bundles into the client folder
+  check             typecheck without emitting
+  fmt               prettier
+  clean             remove dist/
+
+project
+  new <arena-name>  scaffold src/arenas/<arena-name>/main.ts
+  sync-typings      refresh typings/ from the installed game client
+
+env: ARENA_GAME_DIR (default ~/ScreepsArena)
+USAGE
+}
+
+case "${1:-}" in
+  start)         shift; cmd_start "$@" ;;
+  stop)          cmd_stop ;;
+  restart)       cmd_stop; cmd_start --build ;;
+  status)        cmd_status ;;
+  logs)          cmd_logs ;;
+  build)         shift; cmd_build "$@" ;;
+  deploy)        shift; cmd_deploy "$@" ;;
+  check)         cmd_check ;;
+  fmt)           cmd_fmt ;;
+  clean)         cmd_clean ;;
+  new)           shift; cmd_new "$@" ;;
+  sync-typings)  cmd_sync_typings ;;
+  ""|-h|--help|help) usage ;;
+  *)             usage; exit 1 ;;
+esac

@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2020"],
+
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitReturns": true,
+
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true,
+
+    // The game-shipped typings have a few authoring bugs (e.g. an undeclared
+    // DirectionConstant in spawn.d.ts). skipLibCheck keeps them usable.
+    "skipLibCheck": true,
+
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/**/*.ts", "typings/**/*.d.ts"]
+}
