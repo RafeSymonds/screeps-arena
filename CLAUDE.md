@@ -14,15 +14,22 @@ Everything goes through `bin/arena` — don't call rollup/tsc directly.
 | `bin/arena stop` / `restart` / `status` / `logs` | watcher lifecycle                                           |
 | `bin/arena build [filter]`                       | one-shot build (filter is a substring of the arena name)    |
 | `bin/arena deploy [filter]`                      | copy built bundles to the client without rebuilding         |
-| `bin/arena check`                                | `tsc --noEmit` — the only correctness gate in this repo     |
+| `bin/arena check`                                | `tsc --noEmit`                                              |
+| `bin/arena sim [options]`                        | play the built bundle against scripted opponents offline    |
 | `bin/arena new <arena-name>`                     | scaffold `src/arenas/<arena-name>/main.ts`                  |
 | `bin/arena sync`                                 | refresh vendored typings and docs from the installed client |
 
-**There is no test suite and no simulator harness.** `bin/arena check` proves the
-code compiles, nothing more. Behaviour is only verified by running a match in
-the client, which a human has to do. Never claim a bot change "works" on the
-strength of a green build — say it compiles and deploys, and that gameplay is
-unverified.
+**Neither gate proves a bot works.** `bin/arena check` proves the code compiles.
+`bin/arena sim` plays it against scripted opponents inside a model of the engine
+written from these docs — good at catching runtime faults and incoherent
+behaviour, useless for discovering that a rule was misread, because the model and
+the bot share the same misconceptions. The opponents are scripts, and the
+fixture holds one sample of terrain that the real arena regenerates every match.
+
+Behaviour against a real opponent is only verified by running a match in the
+client, which a human has to do. Never claim a bot change "works" on the strength
+of a green build or a clean sim sweep — say what was checked and that gameplay is
+unverified. See `tools/sim/README.md`.
 
 ## Layout
 
@@ -34,6 +41,7 @@ typings/sandbox.d.ts      HAND-WRITTEN — sandbox globals the client's typings 
 docs/api/                 GENERATED — markdown API reference, never hand-edit
 dist/                     GENERATED — build output (gitignored)
 tools/                    the generators behind `bin/arena sync`
+tools/sim/                offline simulator behind `bin/arena sim`
 ```
 
 `src/arenas/<name>` must match the client's folder name under `~/ScreepsArena`
@@ -86,12 +94,50 @@ game client, so they match the installed version.
 
 ## Arenas
 
-`season3-spawn_strike` — objective is to **destroy the enemy spawn**. The
-description shown in the game client ("capture your opponent's flag") is a
-copy-paste of the Capture the Flag blurb; it is identical across seasons 1 and 3
-and is wrong. The arena's real contents are generated server-side and are not in
-the client bundle, so `recon.ts` prints a full inventory on tick 1 — read the
-client console after a match rather than guessing at the map.
+`season3-spawn_strike` — objective is to **destroy the enemy spawn**. The blurb
+on the arena tile in the client ("capture your opponent's flag") is a copy-paste
+of the Capture the Flag text and is wrong; the real description lives on the
+server (see _Recovering arena facts_ below).
+
+What the arena actually contains, confirmed from a real match:
+
+- 100x100 map, structures mirrored under a 180° rotation, terrain **randomised
+  per match** — do not hardcode routes, path everything at runtime.
+- Per side: one spawn (3000 hits, 1000 energy) behind a bank of **80 extensions**
+  (100 energy each), all within `SPAWN_RANGE` of the spawn. No sources, no
+  towers, no containers, and construction is disabled. That is ~9000 energy for
+  the whole match, plus the spawn's **+1 energy/tick** regeneration — the arena
+  text says energy does not regenerate, but the spawn's own trickle still does.
+- A walled keep at the centre holding two `Flag`s. Standing on a flag transfers
+  its rampart group (152 ramparts total, 10k hits each) to you: a cross running
+  the length of the map plus the keep's own ring. Own ramparts are walkable by
+  you, block the enemy, and shield anything standing on them. Ramparts expose
+  `controlledBy` (the `Flag`), which the shipped typings omit.
+- 20 `StructureWall`s sealing a diagonal shortcut on each flank — the "secret
+  passage". A cached replay shows them at `hits: 30000`, i.e. this arena
+  overrides the `WALL_HITS` constant of 10000, so breaching one costs 60k damage
+  for a two-tile gap. It roughly halves the trip between the bases, and helps the
+  opponent exactly as much as it helps us.
+
+`recon.ts` still prints a full inventory on tick 1; read the client console after
+a match rather than trusting the above if anything looks off.
+
+## Recovering arena facts
+
+The arena's contents are generated server-side and are not in the client bundle,
+but the client's Chromium HTTP cache keeps what it fetched, including the real
+arena description and **whole replays** (every object's type, position, owner and
+hits, per tick, plus the terrain string):
+
+```
+~/Library/Application Support/screeps_arena/Cache/Cache_Data/
+```
+
+Entries are `<hash>_0` files: the request URL is in the first few hundred bytes
+as plain text, and the body is gzip from the first `1f 8b`. Useful ones are
+`/api/arena/<id>` (description), `/api/game/<id>` (terrain + result) and
+`/api/game/<id>/replay/<tick>`. Terrain is indexed `terrain[y * 100 + x]` with
+`0` plain, `1` wall, `2` swamp.
 
 ## The vendored typings are patched
 

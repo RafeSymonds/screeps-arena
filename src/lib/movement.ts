@@ -3,6 +3,7 @@ import { searchPath } from 'game/path-finder';
 import type { Position } from 'game/prototypes/game-object';
 import type { Creep } from 'game/prototypes';
 import { getDirection, getRange, getTicks } from 'game/utils';
+import { moveCosts } from './body';
 
 /**
  * `moveTo` re-runs A* from scratch on every call, which is wasteful on a 100x100
@@ -22,8 +23,12 @@ const trips = new Map<string, Trip>();
 /** Ticks a creep has spent unable to move, tracked across path recomputes. */
 const stalled = new Map<string, { x: number; y: number; ticks: number }>();
 
-/** Recompute at least this often even when nothing looks wrong. */
-const MAX_PATH_AGE = 12;
+/**
+ * Recompute at least this often even when nothing looks wrong. Kept fairly long
+ * on purpose: the cost matrix shifts every tick as creeps move, and re-planning
+ * constantly makes a creep dither between two routes of near-equal cost.
+ */
+const MAX_PATH_AGE = 25;
 /** Ticks of standing still, while able to move, before we call it wedged. */
 const STUCK_LIMIT = 2;
 
@@ -45,33 +50,50 @@ export function travelTo(
 
   let trip = trips.get(key);
   if (trip && isStale(trip, goal, range, wedged)) trip = undefined;
+  if (!trip) trip = replan(creep, goal, matrix, range);
 
-  if (!trip) {
-    const result = searchPath(creep, { pos: goal, range }, { costMatrix: matrix, maxOps: 20000 });
-    trip = {
-      path: result.path,
-      goalX: goal.x,
-      goalY: goal.y,
-      goalRange: range,
-      computedAt: getTicks(),
-      incomplete: result.incomplete,
-    };
-    trips.set(key, trip);
+  let step = nextStep(creep, trip);
+  if (!step) {
+    // Either we are there, or the cached route no longer starts anywhere near
+    // us — a shoved creep must re-plan now rather than stand still for a tick.
+    if (trip.path.length > 0 || getRange(creep, goal) > range) {
+      trip = replan(creep, goal, matrix, range);
+      step = nextStep(creep, trip);
+    }
   }
-
-  // Drop steps already behind us: a creep can be shoved, or skip one.
-  while (trip.path.length > 0 && getRange(creep, trip.path[0]!) === 0) trip.path.shift();
-
-  const step = trip.path[0];
+  trips.set(key, trip);
   if (!step) return { reachable: !trip.incomplete, wedged };
-  if (getRange(creep, step) > 1) {
-    // We are off the cached path entirely; force a fresh search next tick.
-    trips.delete(key);
-    return { reachable: !trip.incomplete, wedged };
-  }
 
   creep.move(getDirection(step.x - creep.x, step.y - creep.y));
   return { reachable: !trip.incomplete, wedged };
+}
+
+function replan(creep: Creep, goal: Position, matrix: CostMatrix, range: number): Trip {
+  const result = searchPath(
+    creep,
+    { pos: goal, range },
+    {
+      costMatrix: matrix,
+      maxOps: 20000,
+      ...moveCosts(creep),
+    },
+  );
+  return {
+    path: result.path,
+    goalX: goal.x,
+    goalY: goal.y,
+    goalRange: range,
+    computedAt: getTicks(),
+    incomplete: result.incomplete,
+  };
+}
+
+/** The next tile to step onto, dropping any the creep has already passed. */
+function nextStep(creep: Creep, trip: Trip): Position | undefined {
+  while (trip.path.length > 0 && getRange(creep, trip.path[0]!) === 0) trip.path.shift();
+  const step = trip.path[0];
+  if (!step || getRange(creep, step) > 1) return undefined;
+  return step;
 }
 
 /** Returns how many consecutive ticks this creep has failed to move. */
@@ -102,7 +124,7 @@ export function fleeFrom(creep: Creep, threats: Position[], matrix: CostMatrix, 
   const result = searchPath(
     creep,
     threats.map(t => ({ pos: t, range })),
-    { costMatrix: matrix, flee: true, maxOps: 6000 },
+    { costMatrix: matrix, flee: true, maxOps: 6000, ...moveCosts(creep) },
   );
   const step = result.path[0];
   if (step) creep.move(getDirection(step.x - creep.x, step.y - creep.y));

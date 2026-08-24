@@ -1,0 +1,3 @@
+# Generated: one line on purpose, and reformatting it makes a 4000-line diff.
+tools/sim/fixtures/
+tools/sim/stubs/constants.mjs

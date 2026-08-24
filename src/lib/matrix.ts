@@ -1,5 +1,4 @@
 import { CostMatrix } from 'game/path-finder';
-import { getRange } from 'game/utils';
 import type { World } from './world';
 import { isArmed } from './body';
 
@@ -64,18 +63,4 @@ export function travelMatrix(w: World, opts: MatrixOptions = {}): CostMatrix {
   for (const c of w.enemyCreeps) m.set(c.x, c.y, ENEMY_COST);
 
   return m;
-}
-
-/** The rampart of ours that sits closest to `pos`, if we hold any. */
-export function nearestRampart(w: World, pos: { x: number; y: number }) {
-  let best: { x: number; y: number } | undefined;
-  let bestRange = Infinity;
-  for (const r of w.myRamparts) {
-    const range = getRange(pos, r);
-    if (range < bestRange) {
-      bestRange = range;
-      best = { x: r.x, y: r.y };
-    }
-  }
-  return best;
 }

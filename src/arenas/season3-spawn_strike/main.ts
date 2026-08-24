@@ -10,21 +10,32 @@ import { pruneTactics, runHunter, runRunners, runSquad } from './tactics';
  * Season 3 Spawn Strike (basic). Destroy the enemy spawn; a 2000-tick timeout
  * is a draw.
  *
- * The map is a 100x100 mirror: both spawns sit behind their own bank of 80
- * extensions, and there are no sources — the ~9000 energy on the board at tick 1
- * plus the spawn's +1/tick trickle is the entire match budget. Between the two
- * bases stands a cross of ramparts running the length of the map, controlled by
- * two flags in the walled keep at the centre.
+ * The board is a 100x100 mirror. Each side has a spawn behind a bank of 80
+ * extensions and there are no sources, so the ~9000 energy sitting there at tick
+ * 1 plus the spawn's +1/tick trickle is the entire match budget — there is no
+ * economy to play, only a build order. Between the bases sits a walled keep with
+ * two flags in it, controlling a cross of ramparts that runs the length of the
+ * map, and a pair of heavily walled shortcuts down the flanks (30k hits each in
+ * a replay of a real match — this arena overrides `WALL_HITS`).
  *
- * Those ramparts are the whole arena. A creep standing on a rampart it owns
- * cannot be damaged — attacks land on the 10k-hit rampart instead — and enemy
- * creeps cannot step on it at all. Whoever puts a creep on the flags first gets
- * a covered highway down the middle of the map and locks the opponent out of
- * the keep, since the ring can then only be entered by chewing through 10k hits.
+ * What actually wins:
  *
- * So the plan is: win the flag race with two 50-energy MOVE creeps, spend the
- * rest of the board on a melee army with medic support, muster it on the
- * ramparts where it cannot be shot, and walk it into the enemy spawn.
+ * - **Melee.** ATTACK does 30 damage for 80 energy against RANGED_ATTACK's 10
+ *   for 150, and the target that matters is a 3000-hit building that cannot
+ *   move. A handful of ATTACK parts in contact ends the match in a few ticks.
+ * - **The flags, cheaply.** Standing on one hands you its rampart group, and a
+ *   creep on a rampart it owns cannot be damaged at all — attacks land on the
+ *   10k-hit rampart instead. Two 50-energy MOVE creeps buy that, and deny it.
+ *   The rampart cross is *not* the highway it looks like, though: the terrain
+ *   between our base and the near end of it is a maze, and routing an army that
+ *   way is half again as far as heading straight at the enemy.
+ * - **Their extensions.** They are 100 hits each and hold energy the enemy has
+ *   not spent yet, so a fast raider parked in their bank is worth far more than
+ *   its 990 energy.
+ * - **Not losing the race.** Both sides are ~200 ticks apart and both have the
+ *   same budget, so the match is decided by who lands a killing blow first.
+ *   Every tick we work out when each spawn would fall if nobody changed course
+ *   and hold back exactly enough to survive — see `orderSquad` in tactics.ts.
  */
 
 /** Print a progress line this often. */

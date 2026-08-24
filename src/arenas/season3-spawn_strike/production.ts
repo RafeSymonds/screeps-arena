@@ -31,9 +31,9 @@ const RUNNER: BodyPart[] = [MOVE];
  */
 const HUNTER: BodyPart[] = layOutBody({ move: 15, attack: 3 });
 
-/** 1 TOUGH + 4 MOVE + 3 ATTACK: full speed on plains, 400 hits, 90 damage. */
-const BRAWLER_CHUNK = 450;
-const BRAWLER_MAX_CHUNKS = 6;
+/** 1 TOUGH + 5 MOVE + 4 ATTACK: full speed on plains, 1000 hits, 120 damage. */
+const BRAWLER_CHUNK = 580;
+const BRAWLER_MAX_CHUNKS = 5;
 
 /** 1 TOUGH + 3 MOVE + 2 HEAL: full speed on plains, 24 hits/tick of healing. */
 const MEDIC_CHUNK = 660;
@@ -42,7 +42,7 @@ const MEDIC_MAX_CHUNKS = 4;
 function brawlerBody(energy: number, maxChunks = BRAWLER_MAX_CHUNKS): BodyPart[] | null {
   const chunks = Math.min(maxChunks, Math.floor(energy / BRAWLER_CHUNK));
   if (chunks < 1) return null;
-  return layOutBody({ tough: chunks, move: chunks * 4, attack: chunks * 3 });
+  return layOutBody({ tough: chunks, move: chunks * 5, attack: chunks * 4 });
 }
 
 function medicBody(energy: number, maxChunks = MEDIC_MAX_CHUNKS): BodyPart[] | null {
@@ -56,13 +56,20 @@ interface Order {
   body: (energy: number) => BodyPart[] | null;
 }
 
+/**
+ * Spawning costs 3 ticks per body part no matter how it is packaged, so the
+ * total time to convert the board into creeps is fixed. Ordering small-to-large
+ * therefore costs nothing and puts a body on the field a hundred ticks sooner,
+ * which is what decides a race against an opponent that rushes the spawn.
+ */
 const OPENING: Order[] = [
   { role: 'runner', body: () => RUNNER },
   { role: 'runner', body: () => RUNNER },
   { role: 'hunter', body: energy => (energy >= bodyCost(HUNTER) ? HUNTER : null) },
-  { role: 'brawler', body: energy => brawlerBody(energy) },
-  { role: 'medic', body: energy => medicBody(energy) },
-  { role: 'brawler', body: energy => brawlerBody(energy) },
+  { role: 'brawler', body: energy => brawlerBody(energy, 2) },
+  { role: 'brawler', body: energy => brawlerBody(energy, 3) },
+  { role: 'medic', body: energy => medicBody(energy, 3) },
+  { role: 'brawler', body: energy => brawlerBody(energy, 5) },
 ];
 
 let openingIndex = 0;
@@ -95,8 +102,14 @@ function trySpawn(spawn: StructureSpawn, body: BodyPart[], role: Role): boolean 
   return true;
 }
 
-export function openingDone(): boolean {
-  return openingIndex >= OPENING.length;
+/**
+ * True while the spawn is still turning banked energy into bodies. The army uses
+ * this to decide whether waiting another moment actually buys it anything.
+ */
+export function stillBuilding(w: World): boolean {
+  if (w.mySpawn?.spawning) return true;
+  if (openingIndex < OPENING.length) return w.energyAvailable >= BRAWLER_CHUNK;
+  return w.energyAvailable >= BRAWLER_CHUNK * 2;
 }
 
 export function roleOf(creep: Creep): Role {

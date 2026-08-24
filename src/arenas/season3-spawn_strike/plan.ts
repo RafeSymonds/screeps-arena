@@ -1,9 +1,7 @@
 import { searchPath } from 'game/path-finder';
-import type { CostMatrix } from 'game/path-finder';
 import type { Position } from 'game/prototypes/game-object';
 import type { Flag } from 'game/prototypes';
-import { getRange } from 'game/utils';
-import { travelMatrix, nearestRampart } from '../../lib/matrix';
+import { travelMatrix } from '../../lib/matrix';
 import type { World } from '../../lib/world';
 
 /**
@@ -18,6 +16,13 @@ export interface Plan {
   target: Position;
   /** Flag ids, nearest-to-us first. Runners are handed them in this order. */
   flagIds: string[];
+  /**
+   * How much longer the real road between the two bases is than the straight
+   * line. The terrain is a maze, so straight-line range understates travel time
+   * by about half; multiplying by this turns a cheap `getRange` into a usable
+   * arrival estimate without a pathfinder call per creep per tick.
+   */
+  detour: number;
 }
 
 /**
@@ -41,11 +46,20 @@ export function makePlan(w: World): Plan | undefined {
   const ranked = w.flags
     .map(flag => ({
       flag,
-      cost: searchPath(home, { pos: flag, range: 0 }, { costMatrix: matrix }).cost,
+      // Runners are pure MOVE, so swamp costs them no more than plains.
+      cost: searchPath(home, { pos: flag, range: 0 }, { costMatrix: matrix, swampCost: 2 }).cost,
     }))
     .sort((a, b) => a.cost - b.cost);
 
-  plan = { home, target, flagIds: ranked.map(r => String(r.flag.id)) };
+  const road = searchPath(home, { pos: target, range: 1 }, { costMatrix: matrix }).path.length;
+  const direct = Math.max(1, Math.max(Math.abs(home.x - target.x), Math.abs(home.y - target.y)));
+
+  plan = {
+    home,
+    target,
+    flagIds: ranked.map(r => String(r.flag.id)),
+    detour: Math.max(1, road / direct),
+  };
   return plan;
 }
 
@@ -54,34 +68,26 @@ export function flagById(w: World, id: string): Flag | undefined {
 }
 
 /**
- * Where the army gathers before committing. Our own ramparts are the best real
- * estate on the map — a creep standing on one simply cannot be damaged — so we
- * mass on the near end of the rampart cross whenever we hold it.
+ * Where the army gathers before committing: just outside our own spawn, facing
+ * the way we will eventually leave. It sits this close deliberately. Mustering
+ * further forward looks more aggressive but only guards the one route we happen
+ * to favour, and an attacker that comes round another way walks straight past
+ * it into an empty base.
+ *
+ * It is also deliberately *not* the central rampart cross. That looks like a
+ * covered highway on the map, but the terrain between our base and the near end
+ * of it is a maze: going that way is half again as long as heading straight at
+ * the enemy.
  */
-let rally: { pos: Position; ramparts: number; computedAt: number } | undefined;
+let muster: { tick: number; pos: Position } | undefined;
+const MUSTER_STEPS = 5;
+/** The muster point drifts only as obstacles do, so it does not need recomputing often. */
+const MUSTER_TTL = 25;
 
-/**
- * The muster point only moves when our rampart holding changes, so recomputing
- * it every tick meant building a whole CostMatrix and running A* for an answer
- * that almost never differed. The caller's matrix is reused instead of a
- * private one.
- */
-const RALLY_TTL = 25;
-
-export function rallyPoint(w: World, p: Plan, matrix: CostMatrix): Position {
-  if (rally && rally.ramparts === w.myRamparts.length && w.tick - rally.computedAt < RALLY_TTL) {
-    return rally.pos;
-  }
-  rally = { pos: computeRally(w, p, matrix), ramparts: w.myRamparts.length, computedAt: w.tick };
-  return rally.pos;
-}
-
-function computeRally(w: World, p: Plan, matrix: CostMatrix): Position {
-  const onRampart = nearestRampart(w, p.home);
-  if (onRampart && getRange(onRampart, p.home) < getRange(p.home, p.target)) return onRampart;
-
-  // No ramparts yet: sit a short way down the road to the enemy, clear of the
-  // spawn so newly hatched creeps are not boxed in.
+export function musterPoint(w: World, p: Plan): Position {
+  if (muster && w.tick - muster.tick < MUSTER_TTL) return muster.pos;
+  const matrix = travelMatrix(w, { rampartCost: 2 });
   const path = searchPath(p.home, { pos: p.target, range: 1 }, { costMatrix: matrix }).path;
-  return path[Math.min(8, path.length - 1)] ?? p.home;
+  muster = { tick: w.tick, pos: path[Math.min(MUSTER_STEPS, path.length - 1)] ?? p.home };
+  return muster.pos;
 }

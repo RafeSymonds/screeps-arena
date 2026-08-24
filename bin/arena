@@ -84,9 +84,27 @@ cmd_status() {
 
 cmd_build() { have_deps; ARENA_FILTER="${1:-}" npx rollup -c; }
 cmd_check() { have_deps; npx tsc --noEmit && echo "types ok"; }
-cmd_fmt()   { have_deps; npx prettier --write --ignore-unknown --ignore-path .gitignore .; }
+cmd_fmt()   { have_deps; npx prettier --write --ignore-unknown --ignore-path .gitignore --ignore-path .prettierignore .; }
 cmd_logs()  { [[ -f "$LOG_FILE" ]] || die "no log yet — run 'bin/arena start'"; tail -f "$LOG_FILE"; }
 cmd_clean() { rm -rf "$ROOT/dist"; echo "removed dist/"; }
+
+# Play a built bundle against scripted opponents on a real arena's starting
+# position. Catches runtime faults and behavioural nonsense that `check` cannot;
+# it is a model of the engine, not the engine. See tools/sim/README.md.
+cmd_sim() {
+  have_deps
+  local arena="season3-spawn_strike"
+  local prev=""
+  for arg in "$@"; do
+    [[ "$prev" == "--arena" ]] && arena="$arg"
+    prev="$arg"
+  done
+  # Build first, so the simulator always runs the current source, and regenerate
+  # the constant stubs so they cannot drift from the vendored docs.
+  ARENA_FILTER="$arena" npx rollup -c >/dev/null
+  node "$ROOT/tools/sim/gen-constants.mjs" >/dev/null
+  node "$ROOT/tools/sim/run.mjs" "$@"
+}
 
 # Copy an already-built bundle into the client folder without rebuilding.
 cmd_deploy() {
@@ -180,6 +198,7 @@ build
   build [filter]    one-shot build of all arenas (or those matching filter)
   deploy [filter]   copy built bundles into the client folder
   check             typecheck without emitting
+  sim [options]     play the built bundle against scripted opponents (see below)
   fmt               prettier
   clean             remove dist/
 
@@ -189,8 +208,17 @@ project
   sync-typings      refresh typings/ from the installed game client
   sync-docs         refresh docs/ from the installed game client
 
+sim options
+  --opponent <name>  ranged | rusher | blob | swarm | turtle (default: all five)
+  --side <1|2>       which end of the map to play (default: both)
+  --ticks <n>        tick limit per match (default 2000)
+  --trace [--every n]  print positions and flag captures for a single match
+  A clean sweep is evidence the bot behaves, not proof it wins: the simulator is
+  a model of the engine and the opponents are scripts. See tools/sim/README.md.
+
 env: ARENA_GAME_DIR  client script folders (default ~/ScreepsArena)
      ARENA_APP_DIR   installed client app dir (for typings and docs)
+     ARENA_CACHE_DIR client HTTP cache (for tools/sim/extract-fixture.mjs)
 USAGE
 }
 
@@ -203,6 +231,7 @@ case "${1:-}" in
   build)         shift; cmd_build "$@" ;;
   deploy)        shift; cmd_deploy "$@" ;;
   check)         cmd_check ;;
+  sim)           shift; cmd_sim "$@" ;;
   fmt)           cmd_fmt ;;
   clean)         cmd_clean ;;
   new)           shift; cmd_new "$@" ;;

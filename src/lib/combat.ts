@@ -1,7 +1,7 @@
 import { ATTACK, HEAL, RANGED_ATTACK } from 'game/constants';
 import type { Creep, Structure } from 'game/prototypes';
 import { getRange } from 'game/utils';
-import { countParts, firepower, healRate } from './body';
+import { countParts } from './body';
 
 /**
  * Focus fire in the order that shrinks the enemy's output fastest: healers keep
@@ -49,14 +49,6 @@ export function mostWounded(from: Creep, friends: Creep[], range: number): Creep
     }
   }
   return best;
-}
-
-export function totalFirepower(creeps: Creep[]): number {
-  return creeps.reduce((sum, c) => sum + firepower(c), 0);
-}
-
-export function totalHealing(creeps: Creep[]): number {
-  return creeps.reduce((sum, c) => sum + healRate(c), 0);
 }
 
 export function hitsOf(structure: Structure | undefined): number {

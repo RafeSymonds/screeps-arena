@@ -1,32 +1,38 @@
-import { arenaInfo } from 'game';
 import type { Creep, Structure } from 'game/prototypes';
 import type { CostMatrix } from 'game/path-finder';
 import type { Position } from 'game/prototypes/game-object';
 import { getRange } from 'game/utils';
-import { isArmed, meleeDamage, rangedDamage } from '../../lib/body';
+import { arenaInfo } from 'game';
+import { firepower, isArmed, meleeDamage, rangedDamage } from '../../lib/body';
 import { hitsOf, mostWounded, pickTarget } from '../../lib/combat';
 import { fleeFrom, travelTo } from '../../lib/movement';
 import { energyIn } from '../../lib/world';
 import type { World } from '../../lib/world';
-import { HOME_GUARD, flagById, rallyPoint } from './plan';
+import { HOME_GUARD, flagById, musterPoint } from './plan';
 import type { Plan } from './plan';
-import { openingDone, roleOf } from './production';
+import { roleOf, stillBuilding } from './production';
 
-/** How far a squad member may stray from the spearhead before it must close up. */
+/** An attack is only worth launching if it can flatten a spawn this fast. */
+const BURST_TICKS = 8;
+/** Ticks of slack demanded before we trust a straight race and stop defending. */
+const RACE_MARGIN = 40;
+/**
+ * How far a defender will step off the spawn to meet something. Kept short on
+ * purpose: an attacker that can pull the garrison out of position and walk back
+ * in behind it has beaten the garrison without fighting it. Anything that can
+ * actually hurt the spawn has to come inside this ring to do it.
+ */
+const ENGAGE_RANGE = 8;
+/** How far a squad member may trail the spearhead before it must close up. */
 const GROUP_RADIUS = 8;
 /**
- * Push no later than this even if the army never looks ready — a draw is not a
- * win. Read from the arena rather than hardcoded, so a different tick limit
- * does not silently leave the army standing at home until time runs out.
- * Read lazily: `arenaInfo` is not guaranteed to be populated at module load.
+ * Fraction of the match after which the army commits no matter what the race
+ * says. Running the clock out is a draw rather than a win, so the tail of the
+ * match has to be spent attacking; the margin leaves time for the walk.
  */
-function latestPush(): number {
-  return Math.floor(arenaInfo.ticksLimit * 0.55);
-}
+const PUSH_DEADLINE = 0.45;
 /** A hunter below this fraction of its hit points disengages. */
 const HUNTER_BINGO = 0.35;
-
-let pushing = false;
 
 // --- shared actions ---------------------------------------------------------
 
@@ -79,12 +85,131 @@ function mend(creep: Creep, w: World): void {
   if (far) creep.rangedHeal(far);
 }
 
+// --- reading the race ------------------------------------------------------
+
+/**
+ * How long until `creeps` flatten a `hits`-point structure at `goal`, counting
+ * the walk. Arrivals are folded in one at a time, so a lone creep two hundred
+ * tiles away does not get credited with damage it cannot deliver yet.
+ */
+function clockToKill(plan: Plan, creeps: Creep[], goal: Position, hits: number): number {
+  if (hits <= 0) return 0;
+  const wave = creeps
+    .map(c => ({ eta: eta(plan, c, goal), dps: firepower(c) }))
+    .filter(step => step.dps > 0)
+    .sort((a, b) => a.eta - b.eta);
+
+  let now = 0;
+  let done = 0;
+  let dps = 0;
+  for (const step of wave) {
+    const span = step.eta - now;
+    if (dps > 0 && done + dps * span >= hits) return now + (hits - done) / dps;
+    done += dps * span;
+    now = step.eta;
+    dps += step.dps;
+  }
+  return dps > 0 ? now + (hits - done) / dps : Infinity;
+}
+
+/**
+ * Ticks for a creep to reach a position. Straight-line range badly understates
+ * travel on this map — the terrain is a maze and the real route between the two
+ * bases is about twice the direct distance — so it is scaled by the detour
+ * factor measured on the actual road between the spawns.
+ */
+function eta(plan: Plan, creep: Creep, goal: Position): number {
+  return getRange(creep, goal) * plan.detour;
+}
+
+/** Armed enemies close enough to our spawn to be worth swinging at. */
+function homeThreats(w: World, plan: Plan): Creep[] {
+  return w.enemyCreeps.filter(e => isArmed(e) && getRange(e, plan.home) <= HOME_GUARD);
+}
+
+interface Orders {
+  /** Ids held back to cover the spawn. Empty whenever nothing is inbound. */
+  defenders: Set<string>;
+  /** Whether the strike force should set out at all yet. */
+  committed: boolean;
+}
+
+/**
+ * Decide, from what is actually on the board this tick, how the army splits.
+ *
+ * There is no standing garrison and no fixed number of defenders: we work out
+ * when each side's spawn would fall if nobody changed course, and hold back the
+ * fewest creeps whose firepower matches what is walking at us — none at all when
+ * nothing is, and every last one when the answer is "we lose this race".
+ */
+function orderSquad(w: World, plan: Plan, armed: Creep[]): Orders {
+  const none = new Set<string>();
+  if (w.tick > deadline()) return { defenders: none, committed: true };
+
+  const committed = canFinish(w, armed);
+  const enemies = w.enemyCreeps.filter(isArmed);
+  const enemyDps = enemies.reduce((sum, c) => sum + firepower(c), 0);
+  if (enemyDps === 0) return { defenders: none, committed };
+
+  // Both clocks already price in the walk, so an enemy parked on its own spawn
+  // scores as no threat at all without needing a separate distance cutoff.
+  const ours = clockToKill(plan, armed, plan.target, hitsOf(w.enemySpawn));
+  const theirs = clockToKill(plan, enemies, plan.home, hitsOf(w.mySpawn));
+  if (committed && ours + RACE_MARGIN < theirs) return { defenders: none, committed };
+
+  // We would lose that race, so hold back the creeps that can get home before
+  // the blow lands — nearest first — until they out-gun what is coming.
+  const defenders = new Set<string>();
+  let held = 0;
+  const reachable = armed
+    .filter(c => eta(plan, c, plan.home) <= theirs)
+    .sort((a, b) => getRange(a, plan.home) - getRange(b, plan.home));
+  for (const creep of reachable) {
+    if (held >= enemyDps) break;
+    defenders.add(String(creep.id));
+    held += firepower(creep);
+  }
+  return { defenders, committed };
+}
+
+/**
+ * The tick by which we must be attacking. `arenaInfo` is read lazily rather than
+ * at module load, since the sandbox does not guarantee it is populated yet.
+ */
+let deadlineTick: number | undefined;
+
+function deadline(): number {
+  if (deadlineTick === undefined) deadlineTick = Math.floor(arenaInfo.ticksLimit * PUSH_DEADLINE);
+  return deadlineTick;
+}
+
+/** Latched the first time the army is judged strong enough to set out. */
+let launched = false;
+
+/**
+ * Whether the strike force is worth launching. A single brawler that trickles
+ * into a defended base dies for nothing, so we wait until the group can flatten
+ * the spawn in a handful of ticks — and until the spawn back home has stopped
+ * adding to it, because energy sitting in extensions buys nothing and can be
+ * taken off us by a raider.
+ */
+function canFinish(w: World, armed: Creep[]): boolean {
+  const dps = armed.reduce((sum, c) => sum + firepower(c), 0);
+  if (dps * BURST_TICKS < hitsOf(w.enemySpawn)) return false;
+  // Only the *first* launch waits on the spawn. Once the army is out, energy
+  // trickling back in at one a tick must not keep calling it home.
+  if (!launched && stillBuilding(w)) return false;
+  launched = true;
+  return true;
+}
+
 // --- runners ----------------------------------------------------------------
 
 /**
  * The two flags in the central keep hand their rampart group to whoever stands
  * on them, and a creep parked on a flag also physically denies the tile. A
- * single MOVE part is all this costs and it outruns everything on the map.
+ * single MOVE part generates no fatigue, so it crosses swamp at full speed —
+ * the fastest thing on the map, for 50 energy.
  */
 export function runRunners(w: World, plan: Plan, matrix: CostMatrix): void {
   const runners = w.myCreeps.filter(c => roleOf(c) === 'runner');
@@ -111,16 +236,20 @@ export function runRunners(w: World, plan: Plan, matrix: CostMatrix): void {
   // Anything left over waits on the nearest flag we do not yet control.
   for (const runner of spare) {
     const contested = w.flags.filter(f => f.my !== true);
-    const goal = contested.length > 0 ? runner.findClosestByRange(contested) : undefined;
-    travelTo(runner, goal ?? rallyPoint(w, plan, matrix), matrix, 1);
+    if (contested.length > 0) travelTo(runner, nearestTo(runner, contested), matrix, 1);
   }
 }
 
 // --- hunter -----------------------------------------------------------------
 
+/** Per-hunter cooldown on chasing a flag the enemy has walled itself in behind. */
+const flagBan = new Map<string, number>();
+const FLAG_BAN = 80;
+
 /**
- * One fast, cheap raider. Its job order is: keep the middle, then delete the
- * enemy's extensions before they can spend what is in them.
+ * One fast, cheap raider. It takes the middle first, then lives in the enemy's
+ * extension bank: every extension it breaks is 100 energy the enemy never gets
+ * to spend, and they are only 100 hits each.
  */
 export function runHunter(w: World, plan: Plan, matrix: CostMatrix): void {
   for (const creep of w.myCreeps) {
@@ -128,8 +257,8 @@ export function runHunter(w: World, plan: Plan, matrix: CostMatrix): void {
     const key = String(creep.id);
 
     const hurt = creep.hits < creep.hitsMax * HUNTER_BINGO;
-    const nearSpawn = w.enemySpawn !== undefined && getRange(creep, w.enemySpawn) <= 1;
-    if (hurt && !nearSpawn) {
+    const onTheSpawn = w.enemySpawn !== undefined && getRange(creep, w.enemySpawn) <= 1;
+    if (hurt && !onTheSpawn) {
       const shooters = w.enemyCreeps.filter(e => isArmed(e) && getRange(creep, e) <= 6);
       if (shooters.length > 0) {
         strike(creep, w, false);
@@ -138,18 +267,14 @@ export function runHunter(w: World, plan: Plan, matrix: CostMatrix): void {
       }
     }
 
-    const goal = hunterGoal(w, plan, (flagBan.get(key) ?? 0) > w.tick);
+    const goal = hunterGoal(w, plan, creep, (flagBan.get(key) ?? 0) > w.tick);
     const result = travelTo(creep, goal.pos, matrix, goal.range);
-    // A flag the enemy has walled in behind its own ramparts is not worth
-    // 10k hits of chewing; go take their extensions apart instead.
+    // A flag the enemy has sealed behind its own ramparts is not worth 10k hits
+    // of chewing; go take their extensions apart instead.
     if (goal.kind === 'flag' && !result.reachable) flagBan.set(key, w.tick + FLAG_BAN);
     strike(creep, w, result.wedged);
   }
 }
-
-/** Per-hunter cooldown on chasing an unreachable flag. */
-const flagBan = new Map<string, number>();
-const FLAG_BAN = 60;
 
 interface Goal {
   pos: Position;
@@ -157,21 +282,21 @@ interface Goal {
   kind: 'threat' | 'flag' | 'raid';
 }
 
-function hunterGoal(w: World, plan: Plan, skipFlags: boolean): Goal {
-  const threats = w.enemyCreeps.filter(e => isArmed(e) && getRange(e, plan.home) <= HOME_GUARD);
-  if (threats.length > 0) return { pos: nearestTo(plan.home, threats), range: 1, kind: 'threat' };
+function hunterGoal(w: World, plan: Plan, creep: Creep, skipFlags: boolean): Goal {
+  // Answer a home alarm only while we are still nearer to our own spawn than to
+  // the enemy's; past the halfway mark, turning round helps nobody.
+  const threats = homeThreats(w, plan);
+  if (threats.length > 0 && getRange(creep, plan.home) < getRange(creep, plan.target)) {
+    return { pos: nearestTo(plan.home, threats), range: 1, kind: 'threat' };
+  }
 
   if (!skipFlags) {
     const contested = w.flags.filter(f => f.my !== true);
-    if (contested.length > 0) {
-      return { pos: nearestTo(plan.home, contested), range: 0, kind: 'flag' };
-    }
+    if (contested.length > 0) return { pos: nearestTo(creep, contested), range: 0, kind: 'flag' };
   }
 
-  // Every extension still holding energy is energy the enemy has not spent yet,
-  // and they only have 100 hits each.
   const loaded = w.enemyExtensions.filter(e => energyIn(e.store) > 0);
-  if (loaded.length > 0) return { pos: nearestTo(plan.home, loaded), range: 1, kind: 'raid' };
+  if (loaded.length > 0) return { pos: nearestTo(creep, loaded), range: 1, kind: 'raid' };
 
   return { pos: plan.target, range: 1, kind: 'raid' };
 }
@@ -179,9 +304,9 @@ function hunterGoal(w: World, plan: Plan, skipFlags: boolean): Goal {
 // --- main army --------------------------------------------------------------
 
 /**
- * Brawlers and medics move and fight as one body. They gather on our ramparts —
- * where they cannot be damaged at all — then commit once the build order is
- * spent, because piecemeal arrivals lose to a massed defence.
+ * Brawlers and medics move and fight as one body, split each tick between
+ * covering the spawn and going for the kill by {@link orderSquad}. Medics chase
+ * whoever is most hurt, so they follow the fighting rather than a fixed post.
  */
 export function runSquad(w: World, plan: Plan, matrix: CostMatrix): void {
   const squad = w.myCreeps.filter(c => {
@@ -190,84 +315,39 @@ export function runSquad(w: World, plan: Plan, matrix: CostMatrix): void {
   });
   if (squad.length === 0) return;
 
-  const rally = rallyPoint(w, plan, matrix);
-  // Built once per tick rather than rescanned inside shelter() for every
-  // (creep, rampart) pair.
-  const occupied = new Set(w.myCreeps.map(c => `${c.x},${c.y}`));
-  // `undefined` means hold: the army is not assembled yet, so it waits.
-  const objective = squadObjective(w, plan, squad);
-  const anchor = nearestTo(objective ?? rally, squad);
-  const grouped = squad.filter(c => getRange(c, anchor) <= GROUP_RADIUS);
-  const cohesive = grouped.length * 2 >= squad.length;
+  const armed = squad.filter(c => firepower(c) > 0);
+  const { defenders, committed } = orderSquad(w, plan, armed);
+  const strikeForce = armed.filter(c => !defenders.has(String(c.id)));
+  const threats = homeThreats(w, plan);
+  const muster = musterPoint(w, plan);
+  // The spearhead is whoever is furthest along; stragglers close up on it.
+  const leader = strikeForce.length > 0 ? nearestTo(plan.target, strikeForce) : undefined;
 
   for (const creep of squad) {
-    const medic = roleOf(creep) === 'medic';
-    let wedged = false;
+    let goal: Position;
+    let range = 1;
 
-    if (getRange(creep, anchor) > GROUP_RADIUS) {
-      // Reinforcements walk to the army rather than to the objective alone.
-      wedged = travelTo(creep, anchor, matrix, 1).wedged;
-    } else if (objective) {
-      const patient = medic ? mostWounded(creep, squad, 20) : undefined;
-      if (patient) wedged = travelTo(creep, patient, matrix, 1).wedged;
-      else if (medic) wedged = travelTo(creep, anchor, matrix, 1).wedged;
-      else if (cohesive) wedged = travelTo(creep, objective, matrix, 1).wedged;
+    if (roleOf(creep) === 'medic') {
+      const patient = mostWounded(creep, squad, 20);
+      goal =
+        patient ?? (committed && leader ? leader : nearestTo(creep, armed.length ? armed : squad));
+    } else if (defenders.has(String(creep.id)) || !committed) {
+      // Holding: meet whatever has come inside the ring, otherwise sit on the
+      // spawn and make them come to us.
+      const close = threats.filter(e => getRange(e, plan.home) <= ENGAGE_RANGE);
+      goal = close.length > 0 ? nearestTo(plan.home, close) : muster;
+      range = close.length > 0 ? 1 : 2;
+    } else if (leader && creep !== leader && getRange(creep, leader) > GROUP_RADIUS) {
+      goal = leader;
     } else {
-      const post = shelter(w, creep, rally, occupied);
-      if (post) {
-        if (getRange(creep, post) > 0) wedged = travelTo(creep, post, matrix, 0).wedged;
-      } else if (getRange(creep, rally) > 2) {
-        wedged = travelTo(creep, rally, matrix, 2).wedged;
-      }
+      goal = plan.target;
     }
 
-    if (medic) mend(creep, w);
+    const wedged =
+      getRange(creep, goal) > range ? travelTo(creep, goal, matrix, range).wedged : false;
+    if (roleOf(creep) === 'medic') mend(creep, w);
     else strike(creep, w, wedged);
   }
-}
-
-function squadObjective(w: World, plan: Plan, squad: Creep[]): Position | undefined {
-  // If we are one swing from ending the match, nothing else matters.
-  const nearlyWon = hitsOf(w.enemySpawn) <= 1200 && squad.some(c => getRange(c, plan.target) <= 8);
-
-  const threats = w.enemyCreeps.filter(e => isArmed(e) && getRange(e, plan.home) <= HOME_GUARD);
-  if (threats.length > 0 && !nearlyWon) return nearestTo(plan.home, threats);
-
-  return ready(w, squad) ? plan.target : undefined;
-}
-
-function ready(w: World, squad: Creep[]): boolean {
-  if (pushing) return true;
-  const built = openingDone() && !w.mySpawn?.spawning;
-  const broke = w.energyAvailable < 450;
-  if ((built || broke) && squad.length >= 2) pushing = true;
-  if (w.tick > latestPush()) pushing = true;
-  return pushing;
-}
-
-/**
- * The best free rampart tile to wait on: close to us, close to the muster
- * point, and — because it is a rampart — immune to enemy fire.
- */
-function shelter(
-  w: World,
-  creep: Creep,
-  anchor: Position,
-  occupied: Set<string>,
-): Position | undefined {
-  let best: Position | undefined;
-  let bestScore = Infinity;
-  for (const rampart of w.myRamparts) {
-    if (getRange(rampart, anchor) > 12) continue;
-    const standingHere = rampart.x === creep.x && rampart.y === creep.y;
-    if (!standingHere && occupied.has(`${rampart.x},${rampart.y}`)) continue;
-    const score = getRange(creep, rampart) + getRange(rampart, anchor);
-    if (score < bestScore) {
-      bestScore = score;
-      best = { x: rampart.x, y: rampart.y };
-    }
-  }
-  return best;
 }
 
 /** Per-creep state here is keyed by creep id, so it has to be swept too. */

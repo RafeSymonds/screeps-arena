@@ -11,7 +11,8 @@
     "build": "rollup -c",
     "watch": "rollup -c -w",
     "check": "tsc --noEmit",
-    "fmt": "prettier --write --ignore-unknown --ignore-path .gitignore ."
+    "fmt": "prettier --write --ignore-unknown --ignore-path .gitignore --ignore-path .prettierignore .",
+    "sim": "bin/arena sim"
   },
   "devDependencies": {
     "@rollup/plugin-typescript": "^12.1.2",
