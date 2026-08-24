@@ -14,14 +14,16 @@ import {
   StructureWall,
 } from 'game/prototypes';
 import type { GameObject } from 'game/prototypes';
-import { getObjectsByPrototype, getTicks } from 'game/utils';
+import { getObjectsByPrototype } from 'game/utils';
 import { arenaInfo } from 'game';
+import { hitsOf } from '../../lib/combat';
+import type { World } from '../../lib/world';
 
 /**
- * What is actually on this map is not documented anywhere and is not in the
- * game client — the arena is generated server-side. So the first tick prints a
- * full inventory to the client console. Read it once, then tune the strategy
- * against facts instead of guesses.
+ * The arena's contents are generated server-side and are in neither the client
+ * bundle nor the docs, so the first tick prints a full inventory to the client
+ * console. The layout below is what a real match showed; the code never assumes
+ * it, but the report makes it cheap to notice if a match ever differs.
  */
 const PROTOTYPES = [
   ['spawn', StructureSpawn],
@@ -60,19 +62,8 @@ export function reportArena(): void {
       `(first tick ${arenaInfo.cpuTimeLimitFirstTick}ns) ===`,
   );
 
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -Infinity;
-  let maxY = -Infinity;
-
   for (const [label, prototype] of PROTOTYPES) {
     const objects = getObjectsByPrototype(prototype);
-    for (const o of objects) {
-      minX = Math.min(minX, o.x);
-      minY = Math.min(minY, o.y);
-      maxX = Math.max(maxX, o.x);
-      maxY = Math.max(maxY, o.y);
-    }
     if (objects.length === 0) continue;
 
     const owned = objects.filter(o => (o as { my?: boolean }).my === true).length;
@@ -83,22 +74,24 @@ export function reportArena(): void {
     );
 
     // Positions matter for the handful of things strategy hinges on.
-    if (label === 'spawn' || label === 'source' || label === 'container' || label === 'flag') {
+    if (label === 'spawn' || label === 'flag') {
       for (const o of objects) {
         const side = (o as { my?: boolean }).my;
         const owner = side === true ? 'mine' : side === false ? 'enemy' : 'neutral';
-        const energy = label === 'source' ? ` energy=${(o as Source).energy}` : store(o);
-        console.log(`  ${label} ${owner} ${at(o)}${energy}`);
+        console.log(`  ${label} ${owner} ${at(o)}${store(o)}`);
       }
     }
   }
-
-  console.log(`object extent: x ${minX}..${maxX}, y ${minY}..${maxY}`);
 }
 
 /** Print the shape of the fight periodically so a replay can be read back. */
-export function reportProgress(mySpawnHits: number, enemySpawnHits: number, army: number): void {
+export function reportProgress(w: World): void {
+  const flags = w.flags
+    .map(f => `${at(f)}${f.my === true ? '+' : f.my === false ? '-' : '?'}`)
+    .join(' ');
   console.log(
-    `t${getTicks()} army=${army} mySpawn=${mySpawnHits}hp enemySpawn=${enemySpawnHits}hp`,
+    `t${w.tick} energy=${w.energyAvailable} army=${w.myCreeps.length}v${w.enemyCreeps.length} ` +
+      `ramparts=${w.myRamparts.length}/${w.ramparts.length} flags=${flags} ` +
+      `mySpawn=${hitsOf(w.mySpawn)} enemySpawn=${hitsOf(w.enemySpawn)}`,
   );
 }

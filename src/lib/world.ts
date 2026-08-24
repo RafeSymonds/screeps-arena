@@ -1,13 +1,16 @@
 import { RESOURCE_ENERGY } from 'game/constants';
 import {
   Creep,
-  Source,
-  StructureContainer,
+  Flag,
   StructureExtension,
+  StructureRampart,
   StructureSpawn,
-  StructureTower,
+  StructureWall,
 } from 'game/prototypes';
-import { getObjectsByPrototype, getTicks } from 'game/utils';
+import { getObjectsByPrototype, getRange, getTicks } from 'game/utils';
+
+/** `spawnCreep` may draw energy from extensions within this range of the spawn. */
+export const SPAWN_RANGE = 20;
 
 /**
  * Everything worth querying once per tick. `getObjectsByPrototype` walks the
@@ -17,14 +20,23 @@ export interface World {
   tick: number;
   mySpawn: StructureSpawn | undefined;
   enemySpawn: StructureSpawn | undefined;
+  /** Both spawns, whoever owns them — they are obstacles either way. */
+  spawns: StructureSpawn[];
   myCreeps: Creep[];
   enemyCreeps: Creep[];
-  myTowers: StructureTower[];
+  /** The two capture flags in the central keep. */
+  flags: Flag[];
+  ramparts: StructureRampart[];
+  myRamparts: StructureRampart[];
+  /** The walls sealing the two flank passages. */
+  walls: StructureWall[];
+  extensions: StructureExtension[];
   myExtensions: StructureExtension[];
-  containers: StructureContainer[];
-  sources: Source[];
-  /** Energy sitting in the spawn plus every extension. */
-  storedEnergy: number;
+  enemyExtensions: StructureExtension[];
+  /** Ids of every creep we own, including ones still in the spawn. */
+  myCreepIds: Set<string>;
+  /** Energy `spawnCreep` can actually reach right now. */
+  energyAvailable: number;
 }
 
 let cache: World | undefined;
@@ -35,22 +47,34 @@ export function world(): World {
 
   const spawns = getObjectsByPrototype(StructureSpawn);
   const creeps = getObjectsByPrototype(Creep);
-  const extensions = getObjectsByPrototype(StructureExtension).filter(e => e.my);
+  const ramparts = getObjectsByPrototype(StructureRampart);
+  const extensions = getObjectsByPrototype(StructureExtension);
   const mySpawn = spawns.find(s => s.my);
+  const myExtensions = extensions.filter(e => e.my === true);
+
+  let energyAvailable = mySpawn ? energyIn(mySpawn.store) : 0;
+  if (mySpawn) {
+    for (const e of myExtensions) {
+      if (getRange(mySpawn, e) <= SPAWN_RANGE) energyAvailable += energyIn(e.store);
+    }
+  }
 
   cache = {
     tick,
     mySpawn,
-    enemySpawn: spawns.find(s => !s.my),
+    enemySpawn: spawns.find(s => s.my === false),
+    spawns,
     myCreeps: creeps.filter(c => c.my && !c.spawning),
-    enemyCreeps: creeps.filter(c => !c.my),
-    myTowers: getObjectsByPrototype(StructureTower).filter(t => t.my),
-    myExtensions: extensions,
-    containers: getObjectsByPrototype(StructureContainer),
-    sources: getObjectsByPrototype(Source),
-    storedEnergy:
-      (mySpawn?.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0) +
-      extensions.reduce((sum, e) => sum + (e.store.getUsedCapacity(RESOURCE_ENERGY) ?? 0), 0),
+    enemyCreeps: creeps.filter(c => !c.my && !c.spawning),
+    flags: getObjectsByPrototype(Flag),
+    ramparts,
+    myRamparts: ramparts.filter(r => r.my === true),
+    walls: getObjectsByPrototype(StructureWall),
+    extensions,
+    myExtensions,
+    enemyExtensions: extensions.filter(e => e.my === false),
+    myCreepIds: new Set(creeps.filter(c => c.my).map(c => String(c.id))),
+    energyAvailable,
   };
   return cache;
 }

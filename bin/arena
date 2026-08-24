@@ -82,7 +82,7 @@ cmd_status() {
   done
 }
 
-cmd_build() { have_deps; [[ -n "${1:-}" ]] && npx rollup -c -- "--arena=$1" || npx rollup -c; }
+cmd_build() { have_deps; ARENA_FILTER="${1:-}" npx rollup -c; }
 cmd_check() { have_deps; npx tsc --noEmit && echo "types ok"; }
 cmd_fmt()   { have_deps; npx prettier --write --ignore-unknown --ignore-path .gitignore .; }
 cmd_logs()  { [[ -f "$LOG_FILE" ]] || die "no log yet — run 'bin/arena start'"; tail -f "$LOG_FILE"; }
