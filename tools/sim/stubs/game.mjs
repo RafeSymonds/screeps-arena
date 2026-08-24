@@ -3,6 +3,7 @@ export const arenaInfo = {
   season: 'season_3',
   level: 1,
   ticksLimit: 2000,
-  cpuTimeLimit: 50000000,
-  cpuTimeLimitFirstTick: 500000000,
+  // Values the arena actually reports, read out of a real match's log.
+  cpuTimeLimit: 100000000,
+  cpuTimeLimitFirstTick: 1000000000,
 };

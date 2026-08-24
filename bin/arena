@@ -126,6 +126,10 @@ cmd_deploy() {
   (( any )) || echo "nothing deployed — run 'bin/arena build' first"
 }
 
+# Finished matches, read out of the game client's HTTP cache.
+cmd_games()  { have_deps; node "$ROOT/tools/replay/review.mjs" "$@"; }
+cmd_review() { have_deps; node "$ROOT/tools/replay/review.mjs" "${1:-latest}" "${@:2}"; }
+
 # The client auto-updates its typings; pull them back into the repo so the
 # checked-in copy matches the installed game version.
 cmd_sync_typings() {
@@ -200,6 +204,9 @@ build
   deploy [filter]   copy built bundles into the client folder
   check             typecheck without emitting
   sim [options]     play the built bundle against scripted opponents (see below)
+  games             list finished matches found in the game client's cache
+  review <id>       replay one of them — console output, timeline, enemy bodies
+                    (`latest`, or `loss` for the newest loss; --step N to thin)
   fmt               prettier
   clean             remove dist/
 
@@ -233,6 +240,8 @@ case "${1:-}" in
   deploy)        shift; cmd_deploy "$@" ;;
   check)         cmd_check ;;
   sim)           shift; cmd_sim "$@" ;;
+  games)         shift; cmd_games "$@" ;;
+  review)        shift; cmd_review "$@" ;;
   fmt)           cmd_fmt ;;
   clean)         cmd_clean ;;
   new)           shift; cmd_new "$@" ;;

@@ -31,6 +31,30 @@ function lay(tough, move, work) {
 const repeat = (n, part) => Array(n).fill(part);
 
 export const STYLES = {
+  /**
+   * DefaultO, reconstructed from game 6a8c8dac19e76e3a8caff97a: one maximum-size
+   * 25 MOVE / 25 RANGED_ATTACK blob started on tick 13, then a 12 MOVE / 9 HEAL
+   * medic behind it. Full speed on plains and 250 damage at range 3 with 108
+   * hits a tick of healing — it beat this bot 3000 to 1440.
+   */
+  deathball: {
+    queue: [
+      () => [C.MOVE],
+      () => lay(0, 2, repeat(1, C.RANGED_ATTACK)),
+      () => lay(0, 25, repeat(25, C.RANGED_ATTACK)),
+      () => lay(0, 12, repeat(9, C.HEAL)),
+    ],
+    body: () => lay(0, 2, repeat(1, C.RANGED_ATTACK)),
+    massAt: 1,
+    kites: true,
+  },
+  /**
+   * s12141209, from game 6a8c8db119e76e54dcaff97b: a 20-part 11 MOVE /
+   * 7 RANGED_ATTACK / 2 HEAL creep every sixty ticks, forever, from tick one.
+   * Never massed, never stopped, and won without this bot landing a blow.
+   */
+  kiter: { body: () => lay(0, 11, [...repeat(7, C.RANGED_ATTACK), ...repeat(2, C.HEAL)]), massAt: 1, kites: true },
+
   /** Ranged/heal blob — the usual Screeps answer, masses before it commits. */
   ranged: {
     body: () => lay(3, 13, [...repeat(8, C.RANGED_ATTACK), ...repeat(2, C.HEAL)]),
@@ -101,8 +125,13 @@ export function create(side, styleName) {
     const target = theirs(P.StructureSpawn)[0];
 
     if (!spawn.spawning) {
-      // Two flag runners first, then fighters until the energy is gone.
-      const body = built < 2 ? [C.MOVE] : style.body();
+      // A `queue` replays a real opponent's build order, then repeats its last
+      // entry; otherwise: two flag runners, then fighters until the energy runs out.
+      const body = style.queue
+        ? style.queue[Math.min(built, style.queue.length - 1)]()
+        : built < 2
+          ? [C.MOVE]
+          : style.body();
       if (!spawn.spawnCreep(body).error) built += 1;
     }
 
@@ -143,6 +172,22 @@ export function create(side, styleName) {
         continue;
       }
 
+      if (style.kites) {
+        // The whole point of a ranged body: never let melee reach you. Back off
+        // from anything that has to touch you to hurt you, and keep shooting.
+        const melee = enemies.filter(
+          e => e.body.some(p => p.type === C.ATTACK && p.hits > 0) && getRange(creep, e) <= 3,
+        );
+        if (melee.length > 0) {
+          const away = searchPath(creep, melee.map(e => ({ pos: e, range: 5 })), {
+            costMatrix: m,
+            flee: true,
+            maxOps: 8000,
+          }).path[0];
+          if (away) creep.move(direction(away.x - creep.x, away.y - creep.y));
+          continue;
+        }
+      }
       if (army.length >= style.massAt && target) step(creep, target, 1, m);
     }
   };
