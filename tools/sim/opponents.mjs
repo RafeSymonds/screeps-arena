@@ -49,6 +49,18 @@ export const STYLES = {
     kites: true,
   },
   /**
+   * JJ, from game 6a8c958019e76e6e02aff9a9: a 42-part 20 MOVE / 11 RANGED_ATTACK
+   * / 11 HEAL blob that parks on its own spawn and out-heals whatever arrives —
+   * 132 hits a tick of healing against 110 of damage. That match ran to the tick
+   * limit with this bot's army stopping thirty hit points short of a win.
+   */
+  healball: {
+    body: () => lay(0, 20, [...repeat(11, C.RANGED_ATTACK), ...repeat(11, C.HEAL)]),
+    massAt: 1,
+    kites: true,
+    defends: true,
+  },
+  /**
    * s12141209, from game 6a8c8db119e76e54dcaff97b: a 20-part 11 MOVE /
    * 7 RANGED_ATTACK / 2 HEAL creep every sixty ticks, forever, from tick one.
    * Never massed, never stopped, and won without this bot landing a blow.
