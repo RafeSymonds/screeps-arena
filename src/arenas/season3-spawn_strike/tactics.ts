@@ -17,12 +17,11 @@ const BURST_TICKS = 8;
 /** Ticks of slack demanded before we trust a straight race and stop defending. */
 const RACE_MARGIN = 40;
 /**
- * How far a defender will step off the spawn to meet something. Kept short on
- * purpose: an attacker that can pull the garrison out of position and walk back
- * in behind it has beaten the garrison without fighting it. Anything that can
- * actually hurt the spawn has to come inside this ring to do it.
+ * How far a defender will step off the spawn to meet something. Long enough to
+ * reach anything lining up a shot on the spawn, short enough that a kiter cannot
+ * tow the garrison away and walk back in behind it.
  */
-const ENGAGE_RANGE = 8;
+const ENGAGE_RANGE = 12;
 /** How far a squad member may trail the spearhead before it must close up. */
 const GROUP_RADIUS = 8;
 /**
@@ -122,6 +121,19 @@ function eta(plan: Plan, creep: Creep, goal: Position): number {
   return getRange(creep, goal) * plan.detour;
 }
 
+/**
+ * Damage this creep can actually land on those attackers — which is not the same
+ * as the damage it has. A melee creep swings for 30 a part and none of it lands
+ * on something that shoots from three tiles and walks away, so counting it left
+ * a single brawler standing guard while every ranged creep marched off to
+ * attack, and the spawn died with the army alive and well.
+ */
+function deliverable(creep: Creep, attackers: Creep[]): number {
+  const ranged = rangedDamage(creep);
+  const theyMustClose = attackers.every(e => rangedDamage(e) === 0);
+  return theyMustClose ? ranged + meleeDamage(creep) : ranged;
+}
+
 /** Armed enemies close enough to our spawn to be worth swinging at. */
 function homeThreats(w: World, plan: Plan): Creep[] {
   return w.enemyCreeps.filter(e => isArmed(e) && getRange(e, plan.home) <= HOME_GUARD);
@@ -161,13 +173,18 @@ function orderSquad(w: World, plan: Plan, armed: Creep[]): Orders {
   // the blow lands — nearest first — until they out-gun what is coming.
   const defenders = new Set<string>();
   let held = 0;
-  const reachable = armed
-    .filter(c => eta(plan, c, plan.home) <= theirs)
-    .sort((a, b) => getRange(a, plan.home) - getRange(b, plan.home));
+  const byDistance = [...armed].sort(
+    (a, b) => getRange(a, plan.home) - getRange(b, plan.home),
+  );
+  const inTime = byDistance.filter(c => eta(plan, c, plan.home) <= theirs);
+  // When the blow is already landing nobody is "in time", and an empty defence
+  // is the one answer that is certainly wrong — it sends the whole army off to
+  // attack while the spawn burns. Fall back to whoever is nearest.
+  const reachable = inTime.length > 0 ? inTime : byDistance;
   for (const creep of reachable) {
     if (held >= enemyDps) break;
     defenders.add(String(creep.id));
-    held += firepower(creep);
+    held += deliverable(creep, enemies);
   }
   return { defenders, committed };
 }
@@ -324,14 +341,11 @@ export function runSquad(w: World, plan: Plan, matrix: CostMatrix): void {
   const leader = strikeForce.length > 0 ? nearestTo(plan.target, strikeForce) : undefined;
 
   for (const creep of squad) {
+    const medic = roleOf(creep) === 'medic';
     let goal: Position;
     let range = 1;
 
-    if (roleOf(creep) === 'medic') {
-      const patient = mostWounded(creep, squad, 20);
-      goal =
-        patient ?? (committed && leader ? leader : nearestTo(creep, armed.length ? armed : squad));
-    } else if (defenders.has(String(creep.id)) || !committed) {
+    if (defenders.has(String(creep.id)) || !committed) {
       // Holding: meet whatever has come inside the ring, otherwise sit on the
       // spawn and make them come to us.
       const close = threats.filter(e => getRange(e, plan.home) <= ENGAGE_RANGE);
@@ -343,10 +357,23 @@ export function runSquad(w: World, plan: Plan, matrix: CostMatrix): void {
       goal = plan.target;
     }
 
+    // Support creeps stay with whoever is hurt, but only if they are already
+    // nearby. They carry the ranged damage now, so letting a casualty tow them
+    // across the map emptied the garrison and lost the spawn with the army alive.
+    if (medic) {
+      const patient = mostWounded(creep, squad, 6);
+      if (patient) {
+        goal = patient;
+        range = 1;
+      }
+    }
+
     const wedged =
       getRange(creep, goal) > range ? travelTo(creep, goal, matrix, range).wedged : false;
-    if (roleOf(creep) === 'medic') mend(creep, w);
-    else strike(creep, w, wedged);
+    // Healing does not conflict with a ranged attack, only with a melee one,
+    // and support creeps carry no ATTACK parts — so they do both every tick.
+    if (medic) mend(creep, w);
+    strike(creep, w, wedged);
   }
 }
 

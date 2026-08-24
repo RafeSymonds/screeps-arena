@@ -68,11 +68,14 @@ export function flagById(w: World, id: string): Flag | undefined {
 }
 
 /**
- * Where the army gathers before committing: just outside our own spawn, facing
- * the way we will eventually leave. It sits this close deliberately. Mustering
- * further forward looks more aggressive but only guards the one route we happen
- * to favour, and an attacker that comes round another way walks straight past
- * it into an empty base.
+ * Where the army gathers before committing: right on top of our own spawn.
+ *
+ * It sits this close deliberately. Anything that wants to hurt the spawn has to
+ * come within three tiles of it, so a defender standing on the spawn is in range
+ * of every attacker that matters and can never be drawn out of position. Even
+ * five tiles out was too far: a ranged attacker slid past the muster point,
+ * parked at range three and burned the spawn down in nine ticks while the
+ * garrison watched from just outside its own engagement radius.
  *
  * It is also deliberately *not* the central rampart cross. That looks like a
  * covered highway on the map, but the terrain between our base and the near end
@@ -80,7 +83,7 @@ export function flagById(w: World, id: string): Flag | undefined {
  * the enemy.
  */
 let muster: { tick: number; pos: Position } | undefined;
-const MUSTER_STEPS = 5;
+const MUSTER_STEPS = 2;
 /** The muster point drifts only as obstacles do, so it does not need recomputing often. */
 const MUSTER_TTL = 25;
 

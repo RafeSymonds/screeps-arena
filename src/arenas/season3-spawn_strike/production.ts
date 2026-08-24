@@ -35,9 +35,14 @@ const HUNTER: BodyPart[] = layOutBody({ move: 15, attack: 3 });
 const BRAWLER_CHUNK = 580;
 const BRAWLER_MAX_CHUNKS = 5;
 
-/** 1 TOUGH + 3 MOVE + 2 HEAL: full speed on plains, 24 hits/tick of healing. */
-const MEDIC_CHUNK = 660;
-const MEDIC_MAX_CHUNKS = 4;
+/**
+ * 1 TOUGH + 4 MOVE + 2 RANGED_ATTACK + 1 HEAL. `heal` conflicts with `attack`
+ * but not with `rangedAttack`, so a support creep can shoot and heal in the same
+ * tick — which is why every opponent worth losing to carries both. Full speed on
+ * plains, 20 damage at range 3, 12 hits a tick of healing.
+ */
+const MEDIC_CHUNK = 760;
+const MEDIC_MAX_CHUNKS = 6;
 
 function brawlerBody(energy: number, maxChunks = BRAWLER_MAX_CHUNKS): BodyPart[] | null {
   const chunks = Math.min(maxChunks, Math.floor(energy / BRAWLER_CHUNK));
@@ -48,7 +53,12 @@ function brawlerBody(energy: number, maxChunks = BRAWLER_MAX_CHUNKS): BodyPart[]
 function medicBody(energy: number, maxChunks = MEDIC_MAX_CHUNKS): BodyPart[] | null {
   const chunks = Math.min(maxChunks, Math.floor(energy / MEDIC_CHUNK));
   if (chunks < 1) return null;
-  return layOutBody({ tough: chunks, move: chunks * 3, heal: chunks * 2 });
+  return layOutBody({
+    tough: chunks,
+    move: chunks * 4,
+    ranged: chunks * 2,
+    heal: chunks,
+  });
 }
 
 interface Order {
@@ -66,10 +76,11 @@ const OPENING: Order[] = [
   { role: 'runner', body: () => RUNNER },
   { role: 'runner', body: () => RUNNER },
   { role: 'hunter', body: energy => (energy >= bodyCost(HUNTER) ? HUNTER : null) },
+  { role: 'medic', body: energy => medicBody(energy, 2) },
+  { role: 'medic', body: energy => medicBody(energy, 4) },
   { role: 'brawler', body: energy => brawlerBody(energy, 2) },
+  { role: 'medic', body: energy => medicBody(energy, 6) },
   { role: 'brawler', body: energy => brawlerBody(energy, 3) },
-  { role: 'medic', body: energy => medicBody(energy, 3) },
-  { role: 'brawler', body: energy => brawlerBody(energy, 5) },
 ];
 
 let openingIndex = 0;
