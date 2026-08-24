@@ -10,6 +10,8 @@ PID_FILE="$RUN_DIR/watch.pid"
 LOG_FILE="$RUN_DIR/watch.log"
 ARENAS_SRC="$ROOT/src/arenas"
 GAME_DIR="${ARENA_GAME_DIR:-$HOME/ScreepsArena}"
+# The installed client, which ships both the typings and the reference docs.
+APP_DIR="${ARENA_APP_DIR:-$HOME/Library/Application Support/Steam/steamapps/common/ScreepsArena/screeps_arena.app/Contents/Resources/app}"
 
 die() { echo "error: $*" >&2; exit 1; }
 have_deps() { [[ -d "$ROOT/node_modules" ]] || { echo "installing dependencies..."; npm install; }; }
@@ -108,19 +110,41 @@ cmd_deploy() {
 # The client auto-updates its typings; pull them back into the repo so the
 # checked-in copy matches the installed game version.
 cmd_sync_typings() {
+  have_deps
   local src=""
   for dir in "$GAME_DIR"/*/typings/game; do
     [[ -d "$dir" ]] && { src="$dir"; break; }
   done
-  [[ -n "$src" ]] || die "no typings under $GAME_DIR/*/typings/game — open an arena in the client first"
+  [[ -z "$src" && -d "$APP_DIR/arena-definitions/common/typings/game" ]] &&
+    src="$APP_DIR/arena-definitions/common/typings/game"
+  [[ -n "$src" ]] || die "no game typings found — open an arena in the client first"
+
   rsync -a --delete "$src/" "$ROOT/typings/game/"
   # Shipped typings bug (v1.2.0): a stray top-level import turns game-object.d.ts
   # into a module, which breaks every `extends GameObject` inheritance.
   sed -i '' '/^import {SearchPathOptions} from "\.\.\/path-finder";$/d' \
     "$ROOT/typings/game/prototypes/game-object.d.ts"
-  echo "typings synced from $src (patched game-object.d.ts)"
+  echo "game typings synced from $src (patched game-object.d.ts)"
+
+  # Arena-specific modules (BonusFlag, EscortCreep, portals, …) live with the
+  # per-arena definitions rather than in the shared typings folder.
+  if [[ -d "$APP_DIR/arena-definitions" ]]; then
+    node "$ROOT/tools/sync-arena-typings.mjs" "$APP_DIR/arena-definitions" "$ROOT/typings/arena" | head -1
+  else
+    echo "skip arena typings: no client install at $APP_DIR"
+  fi
   cmd_check
 }
+
+# The full reference docs ship inside the client as one HTML page. Render it to
+# markdown so it is greppable and diffable.
+cmd_sync_docs() {
+  have_deps
+  [[ -f "$APP_DIR/arena-docs/index.html" ]] || die "no docs at $APP_DIR/arena-docs (set ARENA_APP_DIR)"
+  node "$ROOT/tools/docs-to-markdown.mjs" "$APP_DIR/arena-docs/index.html" "$ROOT/docs/api"
+}
+
+cmd_sync() { cmd_sync_typings; cmd_sync_docs; }
 
 cmd_new() {
   local name="${1:-}"
@@ -161,9 +185,12 @@ build
 
 project
   new <arena-name>  scaffold src/arenas/<arena-name>/main.ts
+  sync              sync-typings + sync-docs
   sync-typings      refresh typings/ from the installed game client
+  sync-docs         refresh docs/ from the installed game client
 
-env: ARENA_GAME_DIR (default ~/ScreepsArena)
+env: ARENA_GAME_DIR  client script folders (default ~/ScreepsArena)
+     ARENA_APP_DIR   installed client app dir (for typings and docs)
 USAGE
 }
 
@@ -179,7 +206,9 @@ case "${1:-}" in
   fmt)           cmd_fmt ;;
   clean)         cmd_clean ;;
   new)           shift; cmd_new "$@" ;;
+  sync)          cmd_sync ;;
   sync-typings)  cmd_sync_typings ;;
+  sync-docs)     cmd_sync_docs ;;
   ""|-h|--help|help) usage ;;
   *)             usage; exit 1 ;;
 esac

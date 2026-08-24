@@ -1,0 +1,116 @@
+# Constants
+
+Import from `game/constants`.
+
+| constant                             | value                          |
+| ------------------------------------ | ------------------------------ |
+| `ATTACK`                             | `attack`                       |
+| `ATTACK_POWER`                       | `30`                           |
+| `BODYPART_HITS`                      | `100`                          |
+| `BOTTOM`                             | `5`                            |
+| `BOTTOM_LEFT`                        | `6`                            |
+| `BOTTOM_RIGHT`                       | `4`                            |
+| `BUILD_POWER`                        | `5`                            |
+| `CARRY`                              | `carry`                        |
+| `CARRY_CAPACITY`                     | `50`                           |
+| `CONSTRUCTION_COST_ROAD_SWAMP_RATIO` | `5`                            |
+| `CONSTRUCTION_COST_ROAD_WALL_RATIO`  | `150`                          |
+| `CONTAINER_CAPACITY`                 | `2000`                         |
+| `CONTAINER_HITS`                     | `300`                          |
+| `CREEP_SPAWN_TIME`                   | `3`                            |
+| `DISMANTLE_COST`                     | `0.005`                        |
+| `DISMANTLE_POWER`                    | `50`                           |
+| `EFF_ATTACK_BOOST`                   | `eff_attack_boost`             |
+| `EFF_CONSTRUCTION_BOOST`             | `eff_construction_boost`       |
+| `EFF_HEAL_BOOST`                     | `eff_heal_boost`               |
+| `EFF_MOVE_BOOST`                     | `eff_move_boost`               |
+| `EFF_RANGED_ATTACK_BOOST`            | `eff_ranged_attack_boost`      |
+| `EFF_WORK_BOOST`                     | `eff_work_boost`               |
+| `ERR_BUSY`                           | `-4`                           |
+| `ERR_FULL`                           | `-8`                           |
+| `ERR_INVALID_ARGS`                   | `-10`                          |
+| `ERR_INVALID_TARGET`                 | `-7`                           |
+| `ERR_NAME_EXISTS`                    | `-3`                           |
+| `ERR_NOT_ENOUGH_ENERGY`              | `-6`                           |
+| `ERR_NOT_ENOUGH_EXTENSIONS`          | `-6`                           |
+| `ERR_NOT_ENOUGH_RESOURCES`           | `-6`                           |
+| `ERR_NOT_FOUND`                      | `-5`                           |
+| `ERR_NOT_IN_RANGE`                   | `-9`                           |
+| `ERR_NOT_OWNER`                      | `-1`                           |
+| `ERR_NO_BODYPART`                    | `-12`                          |
+| `ERR_NO_PATH`                        | `-2`                           |
+| `ERR_TIRED`                          | `-11`                          |
+| `EXTENSION_ENERGY_CAPACITY`          | `100`                          |
+| `EXTENSION_HITS`                     | `100`                          |
+| `HARVEST_POWER`                      | `2`                            |
+| `HEAL`                               | `heal`                         |
+| `HEAL_POWER`                         | `12`                           |
+| `LEFT`                               | `7`                            |
+| `MAX_CONSTRUCTION_SITES`             | `10`                           |
+| `MAX_CREEP_SIZE`                     | `50`                           |
+| `MOVE`                               | `move`                         |
+| `OBSTACLE_OBJECT_TYPES`              | ``                             |
+| `OK`                                 | `0`                            |
+| `RAMPART_HITS`                       | `10000`                        |
+| `RAMPART_HITS_MAX`                   | `10000`                        |
+| `RANGED_ATTACK`                      | `ranged_attack`                |
+| `RANGED_ATTACK_DISTANCE_RATE`        | `{0: 1, 1: 1, 2: 0.4, 3: 0.1}` |
+| `RANGED_ATTACK_POWER`                | `10`                           |
+| `RANGED_HEAL_POWER`                  | `4`                            |
+| `REPAIR_COST`                        | `0.01`                         |
+| `REPAIR_POWER`                       | `100`                          |
+| `RESOURCES_ALL`                      | `[RESOURCE_ENERGY]`            |
+| `RESOURCE_DECAY`                     | `1000`                         |
+| `RESOURCE_ENERGY`                    | `energy`                       |
+| `RIGHT`                              | `3`                            |
+| `ROAD_HITS`                          | `500`                          |
+| `ROAD_WEAROUT`                       | `1`                            |
+| `SOURCE_ENERGY_REGEN`                | `10`                           |
+| `SPAWN_ENERGY_CAPACITY`              | `1000`                         |
+| `SPAWN_HITS`                         | `3000`                         |
+| `SPAWN_RANGE`                        | `20`                           |
+| `TERRAIN_PLAIN`                      | `0`                            |
+| `TERRAIN_SWAMP`                      | `2`                            |
+| `TERRAIN_WALL`                       | `1`                            |
+| `TOP`                                | `1`                            |
+| `TOP_LEFT`                           | `8`                            |
+| `TOP_RIGHT`                          | `2`                            |
+| `TOUGH`                              | `tough`                        |
+| `TOWER_CAPACITY`                     | `10`                           |
+| `TOWER_COOLDOWN`                     | `10`                           |
+| `TOWER_ENERGY_COST`                  | `10`                           |
+| `TOWER_FALLOFF`                      | `1`                            |
+| `TOWER_FALLOFF_RANGE`                | `21`                           |
+| `TOWER_HITS`                         | `3000`                         |
+| `TOWER_OPTIMAL_RANGE`                | `1`                            |
+| `TOWER_POWER_ATTACK`                 | `1000`                         |
+| `TOWER_POWER_HEAL`                   | `600`                          |
+| `TOWER_POWER_REPAIR`                 | `200`                          |
+| `TOWER_RANGE`                        | `20`                           |
+| `WALL_HITS`                          | `10000`                        |
+| `WALL_HITS_MAX`                      | `10000`                        |
+| `WORK`                               | `work`                         |
+
+## BODYPART_COST
+
+| constant          | value |
+| ----------------- | ----- |
+| `[WORK]`          | `100` |
+| `[MOVE]`          | `50`  |
+| `[CARRY]`         | `50`  |
+| `[ATTACK]`        | `80`  |
+| `[RANGED_ATTACK]` | `150` |
+| `[HEAL]`          | `250` |
+| `[TOUGH]`         | `10`  |
+
+## CONSTRUCTION_COST
+
+| constant             | value  |
+| -------------------- | ------ |
+| `StructureTower`     | `1250` |
+| `StructureExtension` | `200`  |
+| `StructureRoad`      | `10`   |
+| `StructureContainer` | `100`  |
+| `StructureWall`      | `100`  |
+| `StructureRampart`   | `200`  |
+| `StructureSpawn`     | `1000` |

@@ -66,7 +66,8 @@ export default arenas.map(arena => ({
     inlineDynamicImports: true,
   },
   // `game/*` modules are provided by the runtime as bare specifiers.
-  external: id => id === 'game' || id.startsWith('game/') || id === 'arena' || id.startsWith('arena/'),
+  external: id =>
+    id === 'game' || id.startsWith('game/') || id === 'arena' || id.startsWith('arena/'),
   plugins: [
     typescript({
       tsconfig: './tsconfig.json',

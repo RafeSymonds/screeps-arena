@@ -8,7 +8,9 @@ into the game client's script folders.
 ```
 src/lib/                       shared code (world cache, body builders)
 src/arenas/<arena-name>/       one bot per arena; main.ts must export loop()
-typings/game/                  official typings, vendored from the installed client
+typings/                       official typings, vendored from the installed client
+docs/api/                      API reference in markdown, generated from the client
+tools/                         the generators behind `bin/arena sync`
 dist/<arena-name>/main.mjs     build output (gitignored)
 ```
 
@@ -34,7 +36,7 @@ bin/arena build [filter]    # build all arenas, or those matching a substring
 bin/arena deploy [filter]   # copy built bundles into the client folder
 bin/arena check             # tsc --noEmit
 bin/arena new <arena-name>  # scaffold a new arena
-bin/arena sync-typings      # refresh typings/ from the installed client
+bin/arena sync              # refresh typings/ and docs/ from the installed client
 bin/arena logs              # tail the watcher
 ```
 
@@ -48,12 +50,30 @@ specifiers the sandbox resolves. The build then copies the bundle to
 If a build warns that a client folder is missing, open that arena in Screeps
 Arena once — the client creates the folder — then rebuild.
 
+## Docs
+
+`docs/api/` is the full Screeps Arena API reference in markdown — one file per
+entity, indexed by `docs/api/index.md`. It is generated from the docs page that
+ships inside the game client (identical to the online copy at
+<https://arena.screeps.com/docs/>, but guaranteed to match the installed
+version). Regenerate with `bin/arena sync-docs`; never edit it by hand.
+
+Use it rather than `docs.screeps.com` — that documents Screeps World, whose API
+differs from Arena's in ways that still compile.
+
 ## Typings
 
-Types come from the game client itself (`<client folder>/typings/game`), which
-auto-updates with the game, rather than from a third-party types package. They
-are vendored into `typings/` and checked in so builds don't depend on the
-install. `bin/arena sync-typings` refreshes them.
+Types come from the game client itself rather than a third-party types package,
+so they auto-update with the game. They are vendored into `typings/` and checked
+in so builds don't depend on the install:
+
+- `typings/game/` — the core API, copied from the client's per-arena typings.
+- `typings/arena/` — the arena-specific modules (`BonusFlag`, `EscortCreep`,
+  portals, score collectors, …) for every season, assembled from the client's
+  `arena-definitions`. Several files declare the same ambient module, so the
+  sync merges them.
+
+`bin/arena sync-typings` refreshes both.
 
 The shipped typings (v1.2.0) have a bug: a stray top-level import in
 `prototypes/game-object.d.ts` turns that file into a module, which silently
