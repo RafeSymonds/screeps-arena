@@ -56,6 +56,45 @@ Hand-maintaining it went wrong once already: a missing `SPAWN_RANGE` made
 `spawnCreep` ignore every extension, so neither side could afford a fighter and
 every match came out identical.
 
+## Ghost opponents
+
+```sh
+node tools/sim/run.mjs --opponent ghost:<game-id>
+```
+
+A ghost takes an opponent's **build order** — what each creep was made of and the
+tick it hit the field — straight out of a match recording, and drives it with a
+behaviour policy inferred from what those bodies are for (ranged bodies kite,
+melee bodies push). That removes the guess that matters most: in an arena with a
+fixed energy budget and nothing to spend it on but bodies, what they built *is*
+their strategy.
+
+It replays the match's own terrain and opening, on the side it was really played
+from, so the map is right too.
+
+What a ghost does **not** replay is movement. That was tried first and is worse
+than useless: those positions were a response to whatever bot was on the other
+side at the time, so replaying them against a changed bot walks the creeps into
+guns they would have avoided — the recorded s12141209 lost 8-0 to a bot it had
+beaten in reality.
+
+### Ghosts do not yet reproduce their losses
+
+This is the honest state of it. Five ghosts built from five real matches — four
+losses and a draw — and the bot beats all of them in simulation. The harness
+systematically over-rates the bot, and the gap has survived every fix tried so
+far: exact build schedules, focus fire, simultaneous combat resolution, and
+leashing besiegers so they do not retreat across the map.
+
+What is left is opponent micro. The real 安兴 built exactly *one* creep — 20
+RANGED_ATTACK, 5000 hits — and beat an army with two and a half times its damage
+by never once standing still for the ten ticks that would have killed it, picking
+off whichever creep strayed closest. Reproducing that is a kiting-and-focus
+problem, not a bookkeeping one, and no script here does it yet.
+
+So: **a win against a ghost means very little; a loss against one is worth
+taking seriously.** Same rule as the scripted opponents, for the same reason.
+
 ## How far to trust an opponent
 
 The opponents reconstructed from real matches are only as good as the guess at

@@ -10,8 +10,10 @@ import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 
-import { buildWorld, beginTick, endTick, P, state } from './engine.mjs';
+import { buildWorld, buildWorldFromFrame, beginTick, endTick, P, state } from './engine.mjs';
 import { STYLES, create } from './opponents.mjs';
+import * as ghost from './ghost.mjs';
+import { collectGames, sideFromLog } from '../replay/cache.mjs';
 import { stats } from './stubs/path-finder.mjs';
 
 // Must happen before the bundle is imported, and the import must be dynamic so
@@ -45,10 +47,24 @@ async function loadBot(run) {
 let run = 0;
 
 async function play({ opponentStyle, side, trace }) {
-  const me = side === 2 ? 'player2' : 'player1';
-  const foe = side === 2 ? 'player1' : 'player2';
-  buildWorld(FIXTURE, me);
-  const opponent = create(foe, opponentStyle);
+  const replaying = opponentStyle.startsWith('ghost:') ? opponentStyle.slice(6) : null;
+  let me = side === 2 ? 'player2' : 'player1';
+  let foe = side === 2 ? 'player1' : 'player2';
+  let opponent;
+
+  if (replaying) {
+    // Reproduce the match as it was played: same map, same opening, same side.
+    const game = collectGames().find(g => g.id === replaying || g.id.startsWith(replaying));
+    if (!game) throw new Error(`no cached game ${replaying}`);
+    me = sideFromLog(game);
+    foe = me === 'player1' ? 'player2' : 'player1';
+    const opening = game.frames.find(f => f.gameTime === 0) ?? game.frames[0];
+    buildWorldFromFrame(game.record.game.terrain, opening, me);
+    opponent = ghost.create(game.id, foe);
+  } else {
+    buildWorld(FIXTURE, me);
+    opponent = create(foe, opponentStyle);
+  }
   const bot = await loadBot(run++);
 
   const mine = cls => state.objects.filter(o => o instanceof cls && o.owner === me);
@@ -101,6 +117,7 @@ async function play({ opponentStyle, side, trace }) {
   const times = cost.map(c => c[0]).sort((a, b) => a - b);
   return {
     result,
+    side: me,
     crash,
     tick: state.tick,
     mySpawn: mine(P.StructureSpawn)[0]?.hits ?? 0,
@@ -116,7 +133,8 @@ async function play({ opponentStyle, side, trace }) {
 }
 
 const styles = has('opponent') ? [flag('opponent')] : Object.keys(STYLES);
-const sides = has('side') ? [Number(flag('side'))] : [1, 2];
+// A ghost fixes the side, because it is reproducing one particular match.
+const sides = styles[0]?.startsWith('ghost:') ? [1] : has('side') ? [Number(flag('side'))] : [1, 2];
 const single = styles.length === 1 && sides.length === 1;
 
 console.log(`arena ${ARENA} · fixture ${FIXTURE} · ${TICKS} ticks\n`);
@@ -134,7 +152,7 @@ for (const opponentStyle of styles) {
     if (outcome.result !== 'win') failures += 1;
     const verdict = { win: 'win ', loss: 'LOSS', draw: 'DRAW' }[outcome.result];
     console.log(
-      `${opponentStyle.padEnd(7)} player${side}  ${verdict}  t${String(outcome.tick).padStart(4)}  ` +
+      `${opponentStyle.padEnd(7)} ${outcome.side.padEnd(7)}  ${verdict}  t${String(outcome.tick).padStart(4)}  ` +
         `spawn ${String(outcome.mySpawn).padStart(4)}/${String(outcome.foeSpawn).padEnd(4)}  ` +
         `flags ${outcome.flags}/2  ramparts ${String(outcome.ramparts).padStart(3)}  ` +
         `foe ext ${String(outcome.foeExtensions).padStart(2)}  creeps ${outcome.creeps}  ` +

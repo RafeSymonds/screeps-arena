@@ -90,13 +90,46 @@ const CLASSES = {
  * player the bot under test controls, so the same fixture plays from either end.
  */
 export function buildWorld(fixture, mySide) {
+  const data = JSON.parse(readFileSync(new URL(`${fixture}.json`, FIXTURES), 'utf8'));
+  return loadWorld(data, mySide);
+}
+
+/**
+ * Build the opening straight out of a match recording, so a ghost opponent plays
+ * on the terrain it was actually recorded on. Terrain is generated per match, and
+ * replaying one match's movements across another's map puts creeps inside walls.
+ */
+export function buildWorldFromFrame(terrain, frame, mySide) {
+  const KEEP = new Set([
+    'StructureExtension',
+    'StructureSpawn',
+    'StructureRampart',
+    'StructureWall',
+    'Flag',
+  ]);
+  const objects = frame.objects
+    .filter(o => KEEP.has(o.prototypeName))
+    .map(o => ({
+      type: o.prototypeName,
+      x: o.x,
+      y: o.y,
+      ...(o.user ? { user: o.user } : {}),
+      ...(o.controlledBy ? { group: o.controlledBy } : {}),
+      ...(o.prototypeName === 'Flag' ? { group: o._id } : {}),
+      ...(o.hitsMax ? { hits: o.hitsMax } : {}),
+      ...(o.store?.energy === undefined
+        ? {}
+        : { store: o.store.energy, capacity: o.storeCapacityResource?.energy ?? o.store.energy }),
+    }));
+  return loadWorld({ terrain, objects }, mySide);
+}
+
+function loadWorld(data, mySide) {
   ME = mySide;
   nextId = 1;
   state.tick = 0;
   state.objects = [];
   state.events = [];
-
-  const data = JSON.parse(readFileSync(new URL(`${fixture}.json`, FIXTURES), 'utf8'));
   state.terrain = Uint8Array.from(data.terrain, ch => Number(ch));
 
   for (const spec of data.objects) {
@@ -118,6 +151,31 @@ export function buildWorld(fixture, mySide) {
 }
 
 export const sideOf = () => ME;
+
+/**
+ * Put a creep straight onto the board, bypassing the spawn. Used by the ghost
+ * opponent, which replays a real opponent's creeps out of a match recording
+ * rather than building them.
+ */
+export function injectCreep({ owner, body, x, y }) {
+  const creep = new P.Creep();
+  Object.assign(creep, {
+    id: nextId++,
+    x,
+    y,
+    owner,
+    body: body.map(type => ({ type, hits: C.BODYPART_HITS })),
+    hits: body.length * C.BODYPART_HITS,
+    hitsMax: body.length * C.BODYPART_HITS,
+    fatigue: 0,
+    spawning: false,
+    exists: true,
+    ghost: true,
+    store: { energy: 0, capacity: 0, getUsedCapacity: () => 0, getFreeCapacity: () => 0, getCapacity: () => 0 },
+  });
+  state.objects.push(creep);
+  return creep;
+}
 export const owned = (cls, side) => state.objects.filter(o => o instanceof cls && o.owner === side);
 
 // --- creep and spawn actions ------------------------------------------------
@@ -142,8 +200,27 @@ function remove(object) {
   object.exists = false;
 }
 
-/** A creep standing on a rampart it owns is shielded by it. */
+/**
+ * Combat resolves at the end of the tick, all at once.
+ *
+ * Applying damage the moment it is called gives whoever runs first each tick a
+ * free strike on every kill: a creep that dies never gets to act, so the bot
+ * under test wins every close exchange it would really have traded. The real
+ * engine resolves a tick's intents together — a creep that dies still deals its
+ * damage that tick — and over a long fight the difference is decisive.
+ */
+const pending = [];
+
 function damage(target, amount) {
+  resolve(target, amount, hit => pending.push(hit));
+}
+
+function restore(creep, amount) {
+  pending.push({ target: creep, heal: amount });
+}
+
+/** Work out *what* takes the hit now; how much it hurts is settled at end of tick. */
+function resolve(target, amount, emit) {
   if (amount <= 0) return;
   if (target instanceof P.Creep) {
     const shield = state.objects.find(
@@ -153,35 +230,48 @@ function damage(target, amount) {
         o.y === target.y &&
         o.owner === target.owner,
     );
-    if (shield) return damage(shield, amount);
-
-    // Damage eats body parts front to back, which is what makes part order
-    // matter: lose every MOVE part first and the creep is stranded for good.
-    let left = amount;
-    for (const part of target.body) {
-      if (left <= 0) break;
-      const bite = Math.min(part.hits, left);
-      part.hits -= bite;
-      left -= bite;
-    }
-    target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
-    if (target.hits <= 0) remove(target);
-    return;
+    if (shield) return emit({ target: shield, damage: amount });
   }
-  target.hits -= amount;
-  if (target.hits <= 0) remove(target);
+  emit({ target, damage: amount });
 }
 
-function restore(creep, amount) {
-  let left = amount;
-  for (const part of creep.body) {
-    if (left <= 0) break;
-    const room = C.BODYPART_HITS - part.hits;
-    const give = Math.min(room, left);
-    part.hits += give;
-    left -= give;
+/** Apply everything this tick's actions asked for, then sweep the dead. */
+function settle() {
+  for (const hit of pending) {
+    const target = hit.target;
+    if (!target.exists) continue;
+    if (hit.heal !== undefined) {
+      if (!(target instanceof P.Creep)) continue;
+      let left = hit.heal;
+      for (const part of target.body) {
+        if (left <= 0) break;
+        const room = C.BODYPART_HITS - part.hits;
+        const give = Math.min(room, left);
+        part.hits += give;
+        left -= give;
+      }
+      target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
+      continue;
+    }
+    if (target instanceof P.Creep) {
+      // Damage eats body parts front to back, which is what makes part order
+      // matter: lose every MOVE part first and the creep is stranded for good.
+      let left = hit.damage;
+      for (const part of target.body) {
+        if (left <= 0) break;
+        const bite = Math.min(part.hits, left);
+        part.hits -= bite;
+        left -= bite;
+      }
+      target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
+    } else {
+      target.hits -= hit.damage;
+    }
   }
-  creep.hits = creep.body.reduce((sum, p) => sum + p.hits, 0);
+  pending.length = 0;
+  for (const object of state.objects.slice()) {
+    if (object.hits !== undefined && object.hits <= 0) remove(object);
+  }
 }
 
 P.Creep.prototype.move = function (direction) {
@@ -343,6 +433,7 @@ function blocked(x, y, owner) {
 export function beginTick() {
   state.tick += 1;
   intents.clear();
+  pending.length = 0;
   for (const object of state.objects) {
     if (object instanceof P.Creep) {
       object.fatigue = Math.max(0, object.fatigue - 2 * parts(object, C.MOVE));
@@ -356,7 +447,11 @@ export function beginTick() {
 }
 
 export function endTick() {
+  // Combat first, and all together: a creep that dies this tick still swung.
+  settle();
+
   for (const [creep, record] of intents) {
+    if (creep.ghost) continue; // positioned by the recording, not by intents
     if (!record.direction || creep.fatigue > 0 || !creep.exists || creep.spawning) continue;
     const [dx, dy] = DELTA[record.direction] ?? [0, 0];
     const x = creep.x + dx;
