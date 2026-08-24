@@ -49,6 +49,14 @@ export const STYLES = {
     kites: true,
   },
   /**
+   * Muffiny, from game 6a8c9cab19e76ebaa6aff9c4: 4 TOUGH + 5 MOVE + 5 ATTACK,
+   * 690 energy, one every forty-two ticks and nothing else. Deliberately
+   * under-moved — nine working parts want nine MOVE for full speed, and at five
+   * it trades a bit under half speed for a third more damage and hit points.
+   * Eleven of them reached 1630 damage a tick against this bot's 550.
+   */
+  swarmer: { body: () => lay(4, 5, repeat(5, C.ATTACK)), massAt: 1 },
+  /**
    * JJ, from game 6a8c958019e76e6e02aff9a9: a 42-part 20 MOVE / 11 RANGED_ATTACK
    * / 11 HEAL blob that parks on its own spawn and out-heals whatever arrives —
    * 132 hits a tick of healing against 110 of damage. That match ran to the tick

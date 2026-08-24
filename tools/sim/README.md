@@ -56,6 +56,22 @@ Hand-maintaining it went wrong once already: a missing `SPAWN_RANGE` made
 `spawnCreep` ignore every extension, so neither side could afford a fighter and
 every match came out identical.
 
+## How far to trust an opponent
+
+The opponents reconstructed from real matches are only as good as the guess at
+how they were *played*. Their bodies come straight out of the replay and are
+exact; their behaviour is a few lines of script and is not.
+
+- `kiter` reproduces its real loss from both ends of the map. Findings against it
+  have held up.
+- `healball` and `swarmer` are beaten by this bot in simulation, and both beat it
+  in the real match. Something about how they were played is missing, so a win
+  against either proves nothing.
+
+Check a new opponent reproduces its real result before tuning anything against
+it. Two body rebalances have already been reverted for being validated against a
+scripted opponent that was not reproducing the loss it came from.
+
 ## Fixtures
 
 Arena contents are generated server-side and are in neither the client bundle nor
