@@ -44,12 +44,13 @@ export function loop(): void {
     plannedAt = s.tick;
   }
 
-  // Anything not in the plan is a flag nobody should blunder onto.
-  const avoid = s.flags.filter(f => !plan!.wanted.has(String(f.id)));
+  const o = orders(s, plan, runnersOf(s).length);
+
+  // Anything not in the plan is a flag nobody should blunder onto, except the
+  // one the army has been sent to take.
+  const avoid = s.flags.filter(f => !plan!.wanted.has(String(f.id)) && f !== o.target);
   const matrix = buildMatrix(s, { avoid });
   const runnerMatrix = buildMatrix(s, { avoid, dangerCost: 20, dangerRange: 4 });
-
-  const o = orders(s, plan, runnersOf(s).length);
   const cleanup = o.mode === 'cleanup';
   runRunners(s, plan, runnerMatrix, cleanup ? s.myCreeps : runnersOf(s), cleanup);
   runArmy(s, o, matrix);

@@ -30,6 +30,10 @@ const HUNT_RATIO = 1.6;
  * four games of four.
  */
 const HUNT_RATIO_OPEN = 1.25;
+/** When losing on score, attack anyway from this tick... */
+const DESPERATE_AFTER = 600;
+/** ...if not clearly weaker. */
+const DESPERATE_RATIO = 0.9;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
 const EVADE_RATIO = 0.7;
 /**
@@ -98,7 +102,22 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     Math.max(200, 2 * s.remaining);
 
   const huntAt = s.centreContest === false ? HUNT_RATIO_OPEN : HUNT_RATIO;
-  if (here && enemies.length > 0 && plan.ratio >= huntAt) {
+  // Losing on the clock with no set of flags that fixes it, a sure loss on
+  // score is worse than an uncertain fight. Three of ten rated games ended
+  // this way: full armies, both sides parked, the enemy on the centre and 15
+  // points a tick to our 10.
+  const desperate = plan.margin < 0 && s.tick >= DESPERATE_AFTER && plan.ratio >= DESPERATE_RATIO;
+  if (here && enemies.length > 0 && (plan.ratio >= huntAt || desperate)) {
+    // Go for their flags rather than their creeps: a flag taken back flips the
+    // score straight away, and they have to come to us to defend it. Chasing
+    // creeps instead, we hunted RickStallion at three to eleven times its
+    // strength for 900 ticks without catching anything while it scored 25 a
+    // tick on all seven flags.
+    const theirs = s.flags.filter(
+      f => f.my === false && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
+    );
+    const flag = closest(here, theirs);
+    if (flag) return { mode: 'escort', target: flag, range: 0 };
     return { mode: 'hunt', target: closest(here, enemies), range: 1 };
   }
 
@@ -145,7 +164,15 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // Until we know the enemy is leaving the centre alone, head there: against
   // one racing for it, arriving second loses.
   const centre = s.flags.find(f => f.effectType === EFF_DAMAGE_TAKEN_MODIFIER && f.my !== false);
-  if (centre && s.centreContest !== false) return { mode: 'guard', target: centre, range: 2 };
+  if (centre && s.centreContest !== false) {
+    // Not yet ours but wanted: one creep steps onto it and the rest stand off.
+    // Guarding at two tiles ringed it with our own army, and our scout stood
+    // outside the ring for 1800 ticks of a real game with the score at zero.
+    if (centre.my !== true && plan.wanted.has(String(centre.id))) {
+      return { mode: 'escort', target: centre, range: 0 };
+    }
+    return { mode: 'guard', target: centre, range: 2 };
+  }
 
   // Guard the owned flag the enemy is most likely to hit next, standing a step
   // off it so a creep of ours is not the thing parked on it.
