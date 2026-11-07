@@ -30,6 +30,8 @@ const HUNT_RATIO = 1.6;
  * four games of four.
  */
 const HUNT_RATIO_OPEN = 1.25;
+/** Hunting, armed enemies this close to the army are killed before flags are taken. */
+const HUNT_REACH = 12;
 /** When losing on score, attack anyway from this tick... */
 const DESPERATE_AFTER = 600;
 /** ...if not clearly weaker. */
@@ -117,6 +119,17 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     // creeps instead, we hunted RickStallion at three to eleven times its
     // strength for 900 ticks without catching anything while it scored 25 a
     // tick on all seven flags.
+    //
+    // But an armed enemy close by is killed first. felixnightshade split its
+    // army into small groups that retook each flag as soon as our one army
+    // moved on: we held 3 to 11 points a tick at two to four times its
+    // strength, and it scored 15 to 22, for 1400 ticks. A group within reach
+    // is the thing to kill, and dead creeps retake nothing.
+    const prey = closest(
+      here,
+      enemies.filter(e => getRange(e, here) <= HUNT_REACH),
+    );
+    if (prey) return { mode: 'hunt', target: prey, range: 1 };
     const theirs = s.flags.filter(
       f => f.my === false && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
     );
