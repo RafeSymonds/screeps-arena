@@ -173,11 +173,16 @@ function playInChild(opponentStyle, side) {
     ...process.execArgv,
     process.argv[1],
     '--row',
-    '--opponent', opponentStyle,
-    '--side', String(side),
-    '--arena', ARENA,
-    '--fixture', FIXTURE,
-    '--ticks', String(TICKS),
+    '--opponent',
+    opponentStyle,
+    '--side',
+    String(side),
+    '--arena',
+    ARENA,
+    '--fixture',
+    FIXTURE,
+    '--ticks',
+    String(TICKS),
   ];
   return new Promise(resolve => {
     execFile(process.execPath, args, { maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
@@ -220,8 +225,6 @@ if (single || JOBS <= 1) {
 }
 
 console.log(
-  failures === 0
-    ? '\nall matches won'
-    : `\n${failures} of ${matches.length} matches not won`,
+  failures === 0 ? '\nall matches won' : `\n${failures} of ${matches.length} matches not won`,
 );
 process.exit(failures === 0 ? 0 : 1);

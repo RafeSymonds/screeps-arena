@@ -12,6 +12,12 @@ Basic prototype for game objects. All objects and classes are inherited from thi
 
 Returns the flag object that controls this game object.
 
+### effects
+
+**Type:** `Effect[] | null`
+
+An array of [Effect](Effect.md) objects applied to this game object, or null if it has no effects.
+
 ### exists
 
 **Type:** `boolean`

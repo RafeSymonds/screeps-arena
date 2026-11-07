@@ -167,7 +167,14 @@ cmd_sync_docs() {
   node "$ROOT/tools/docs-to-markdown.mjs" "$APP_DIR/arena-docs/index.html" "$ROOT/docs/api"
 }
 
-cmd_sync() { cmd_sync_typings; cmd_sync_docs; }
+cmd_sync() {
+  cmd_sync_typings
+  cmd_sync_docs
+  # The client ships its files executable and in its own style; normalise both
+  # so a sync only shows real API changes in the diff.
+  find "$ROOT/typings/game" "$ROOT/typings/arena" "$ROOT/docs/api" -type f -exec chmod 644 {} +
+  npx prettier --write --log-level warn "$ROOT/typings/game" "$ROOT/typings/arena" "$ROOT/docs/api"
+}
 
 cmd_new() {
   local name="${1:-}"

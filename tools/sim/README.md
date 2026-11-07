@@ -76,7 +76,7 @@ A ghost takes an opponent's **build order** — what each creep was made of and 
 tick it hit the field — straight out of a match recording, and drives it with a
 behaviour policy inferred from what those bodies are for (ranged bodies kite,
 melee bodies push). That removes the guess that matters most: in an arena with a
-fixed energy budget and nothing to spend it on but bodies, what they built *is*
+fixed energy budget and nothing to spend it on but bodies, what they built _is_
 their strategy.
 
 It replays the match's own terrain and opening, on the side it was really played
@@ -96,7 +96,7 @@ systematically over-rates the bot, and the gap has survived every fix tried so
 far: exact build schedules, focus fire, simultaneous combat resolution, and
 leashing besiegers so they do not retreat across the map.
 
-What is left is opponent micro. The real 安兴 built exactly *one* creep — 20
+What is left is opponent micro. The real 安兴 built exactly _one_ creep — 20
 RANGED_ATTACK, 5000 hits — and beat an army with two and a half times its damage
 by never once standing still for the ten ticks that would have killed it, picking
 off whichever creep strayed closest. Reproducing that is a kiting-and-focus
@@ -108,7 +108,7 @@ taking seriously.** Same rule as the scripted opponents, for the same reason.
 ## How far to trust an opponent
 
 The opponents reconstructed from real matches are only as good as the guess at
-how they were *played*. Their bodies come straight out of the replay and are
+how they were _played_. Their bodies come straight out of the replay and are
 exact; their behaviour is a few lines of script and is not.
 
 - `kiter` reproduces its real loss from both ends of the map. Findings against it
