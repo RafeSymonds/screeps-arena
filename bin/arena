@@ -275,8 +275,9 @@ sim options
   --ticks <n>        tick limit per match (default 2000)
   --trace [--every n]  print positions and flag captures for a single match
   --arena season4-pain_and_gain  Pain and Gain instead: opponents passive |
-                     greedy | brawler | turtle | mirror (the bot itself),
-                     --game <archived id> to start from that match's map
+                     greedy | brawler | focus | turtle | mirror (the bot itself)
+                     | bundle:<file> (another build), --game <archived id> to
+                     start from that match's map
   A clean sweep is evidence the bot behaves, not proof it wins: the simulator is
   a model of the engine and the opponents are scripts. See tools/sim/README.md.
 

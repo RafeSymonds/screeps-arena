@@ -1,9 +1,8 @@
-import { ATTACK, HEAL, RANGED_ATTACK } from 'game/constants';
 import { Creep } from 'game/prototypes';
 import { getObjectsByPrototype, getTicks } from 'game/utils';
 import { arenaInfo } from 'game';
 import { ScoreFlag } from 'arena/season_4/pain_and_gain/basic';
-import { countParts } from '../../lib/body';
+import { bornUnarmed } from './targets';
 
 /** The whole match budget. Read from the sandbox, with the documented value as fallback. */
 export const TICKS_LIMIT = arenaInfo.ticksLimit || 2000;
@@ -64,7 +63,11 @@ export function state(): State {
   return cache;
 }
 
-/** A creep with nothing to fight or heal with. These capture flags. */
+/**
+ * A creep built with nothing to fight or heal with: the scouts. These capture
+ * flags. A fighter that has lost its weapons is not one; it stays with the army
+ * to be healed back into the fight.
+ */
 export function isRunner(c: Creep): boolean {
-  return countParts(c, ATTACK) + countParts(c, RANGED_ATTACK) + countParts(c, HEAL) === 0;
+  return bornUnarmed(c);
 }

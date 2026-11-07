@@ -3,6 +3,7 @@
 //
 //   node tools/sim/pain-and-gain.mjs                       every opponent, both sides
 //   node tools/sim/pain-and-gain.mjs --opponent mirror --side 2 --trace
+//   node tools/sim/pain-and-gain.mjs --opponent bundle:old.mjs  vs another build
 //   node tools/sim/pain-and-gain.mjs --game <archived id>  that match's terrain and opening
 //
 // The same caveat as run.mjs applies: the engine is a model written from the
@@ -207,6 +208,56 @@ const SCRIPTS = {
     };
   },
 
+  /**
+   * One tight blob that walks at the nearest enemy and focuses it: every melee
+   * on the same creep, ranged at two to three tiles, healers on whoever is
+   * lowest. Modelled on MetalicaX, who beat every version of the bot in real
+   * games by arriving all at once and killing our front creep in a few ticks.
+   */
+  focus: side => () => {
+    const mine = creepsOf(side);
+    const foes = state.objects.filter(o => o instanceof P.Creep && o.owner !== side);
+    const army = mine.filter(c => armed(c) || parts(c, C.HEAL) > 0);
+    if (army.length === 0 || foes.length === 0) return;
+    const mid = {
+      x: Math.round(army.reduce((a, c) => a + c.x, 0) / army.length),
+      y: Math.round(army.reduce((a, c) => a + c.y, 0) / army.length),
+    };
+    const prey = nearest(mid, foes.filter(armed).length ? foes.filter(armed) : foes);
+    const lead = Math.min(...army.map(c => getRange(c, prey)));
+    for (const c of mine) {
+      const inReach = foes.filter(f => getRange(c, f) <= 1);
+      if (parts(c, C.ATTACK) > 0 && inReach.length)
+        c.attack(inReach.includes(prey) ? prey : inReach[0]);
+      if (parts(c, C.RANGED_ATTACK) > 0) {
+        const shot = getRange(c, prey) <= 3 ? prey : nearest(c, foes);
+        if (shot && getRange(c, shot) <= 3) c.rangedAttack(shot);
+      }
+      if (parts(c, C.HEAL) > 0) {
+        const hurt = mine
+          .filter(f => f.hits < f.hitsMax && getRange(c, f) <= 3)
+          .sort((a, b) => a.hits / a.hitsMax - b.hits / b.hitsMax)[0];
+        if (hurt && getRange(c, hurt) <= 1) c.heal(hurt);
+        else if (hurt) c.rangedHeal(hurt);
+      }
+      // Nobody steps more than two tiles ahead of the closest member, so the
+      // blob arrives together.
+      const d = getRange(c, prey);
+      if (d > lead + 2 && getRange(c, mid) <= 3) {
+        stepTo(c, prey, d - 1);
+        continue;
+      }
+      if (parts(c, C.ATTACK) > 0) stepTo(c, prey, 1);
+      else if (parts(c, C.RANGED_ATTACK) > 0) stepTo(c, prey, 2);
+      else if (parts(c, C.HEAL) > 0) {
+        const hurt = mine
+          .filter(f => f !== c && f.hits < f.hitsMax)
+          .sort((a, b) => getRange(c, a) - getRange(c, b))[0];
+        stepTo(c, hurt ?? mid, 1);
+      } else stepTo(c, mid, 2);
+    }
+  },
+
   /** Takes the vulnerability flag and everything ranged-only, then holds the centre. */
   turtle: side => () => {
     const mine = creepsOf(side);
@@ -239,14 +290,19 @@ const SCRIPTS = {
 // --- matches ----------------------------------------------------------------
 
 let loads = 0;
-const loadBot = () => import(`${pathToFileURL(bundle).href}?run=${loads++}`);
+const loadBot = (file = bundle) =>
+  import(`${pathToFileURL(path.resolve(file)).href}?run=${loads++}`);
+/** Opponents that are a whole bot rather than a script: itself, or another build. */
+const isBot = style => style === 'mirror' || style.startsWith('bundle:');
 
 async function play(style, side, fixture, trace) {
   const me = side === 2 ? 'player2' : 'player1';
   const foe = side === 2 ? 'player1' : 'player2';
   setUp(fixture, me);
   const bot = await loadBot();
-  const twin = style === 'mirror' ? await loadBot() : null;
+  const twin = isBot(style)
+    ? await loadBot(style === 'mirror' ? bundle : style.slice('bundle:'.length))
+    : null;
   const script = twin ? null : SCRIPTS[style](foe);
 
   const score = { [me]: 0, [foe]: 0 };
@@ -331,7 +387,7 @@ const styles = has('opponent') ? [flag('opponent')] : [...Object.keys(SCRIPTS), 
 const sides = has('side') ? [Number(flag('side'))] : [1, 2];
 const single = styles.length === 1 && sides.length === 1;
 for (const s of styles) {
-  if (s !== 'mirror' && !SCRIPTS[s]) {
+  if (!isBot(s) && !SCRIPTS[s]) {
     console.error(`unknown opponent ${s}: ${[...Object.keys(SCRIPTS), 'mirror'].join(' | ')}`);
     process.exit(2);
   }
@@ -351,7 +407,7 @@ for (const style of styles) {
       continue;
     }
     // Self-play is symmetric: a draw or either result is information, not failure.
-    if (o.result !== 'win' && style !== 'mirror') failures += 1;
+    if (o.result !== 'win' && !isBot(style)) failures += 1;
     const verdict = { win: 'win ', loss: 'LOSS', draw: 'DRAW' }[o.result];
     console.log(
       `${style.padEnd(8)} ${o.side.padEnd(7)}  ${verdict}  t${String(o.tick).padStart(4)}  ` +
@@ -359,7 +415,7 @@ for (const style of styles) {
     );
   }
 }
-const scripted = styles.filter(s => s !== 'mirror').length * sides.length;
+const scripted = styles.filter(s => !isBot(s)).length * sides.length;
 console.log(
   failures === 0
     ? '\nno scripted match lost'

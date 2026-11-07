@@ -1,22 +1,30 @@
-import { ATTACK, HEAL, MOVE, RANGED_ATTACK } from 'game/constants';
+import { ATTACK, HEAL, HEAL_POWER, MOVE, RANGED_ATTACK } from 'game/constants';
 import type { CostMatrix } from 'game/path-finder';
 import type { Creep } from 'game/prototypes';
 import type { Position } from 'game/prototypes/game-object';
 import { getRange } from 'game/utils';
-import { countParts, isArmed, meleeDamage } from '../../lib/body';
-import { mostWounded, pickTarget } from '../../lib/combat';
+import { countParts, isArmed, meleeDamage, rangedDamage } from '../../lib/body';
 import { fleeFrom, travelTo } from '../../lib/movement';
 import type { FlagPlan } from './flags';
 import type { State } from './state';
 import { isRunner } from './state';
 import { centroid } from './terrain';
+import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets';
 
 /** Stronger than the enemy by this much, go and end the match by wiping them. */
 const HUNT_RATIO = 1.25;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
 const EVADE_RATIO = 0.7;
-/** An armed enemy this close to a creep means that creep is in the fight. */
-const ENGAGE_RANGE = 5;
+/**
+ * Evading only works from a distance. Turning to run from an enemy already in
+ * range hands it free shots at our backs, so inside this we fight instead.
+ */
+const EVADE_MIN_GAP = 8;
+/** An armed enemy this close to the army's centre puts the whole army in the fight. */
+const CONTACT_RANGE = 8;
+/** In a fight, members further than this from the centre close up before engaging. */
+const REJOIN_RANGE = 7;
+
 /** Enemies this close to an owned flag are a raid worth meeting. */
 const RAID_RANGE = 7;
 /** How far the leader lets the group spread before it waits. */
@@ -62,7 +70,8 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     return { mode: 'hunt', target: closest(here, enemies), range: 1 };
   }
 
-  if (here && enemyCenter && plan.ratio < EVADE_RATIO && comfortablyAhead) {
+  const gap = here ? Math.min(...enemies.map(e => getRange(e, here))) : 0;
+  if (here && enemyCenter && plan.ratio < EVADE_RATIO && comfortablyAhead && gap > EVADE_MIN_GAP) {
     return { mode: 'evade', target: enemyCenter, range: 0 };
   }
 
@@ -103,20 +112,57 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       .map(c => getRange(c, anchor)),
   );
 
+  newTick();
+  // Melee first: it has the fewest choices, so ranged fire fills in around it.
+  const order = army
+    .slice()
+    .sort((a, b) => Number(countParts(b, ATTACK) > 0) - Number(countParts(a, ATTACK) > 0));
+  for (const c of order) act(c, s);
+
+  const healers = army.filter(c => countParts(c, HEAL) > 0);
+
+  // The fight is a group decision. Deciding per creep let whoever was nearest
+  // the enemy fight alone while the rest marched elsewhere, and in rated games
+  // the enemy picked those off one at a time.
+  const focus = closest(anchor, armed);
+  const contact =
+    focus !== undefined &&
+    (getRange(anchor, focus) <= CONTACT_RANGE ||
+      army.some(c => !disarmed(c) && armed.some(e => getRange(c, e) <= 3)));
+
   for (const c of army) {
-    act(c, s);
     if (o.mode === 'cleanup') continue;
 
-    const nearestArmed = closest(c, armed);
-    const engaged = nearestArmed !== undefined && getRange(c, nearestArmed) <= ENGAGE_RANGE;
+    // A fighter with no weapons left gets next to a healer, which puts its
+    // weapons back. It does not run: fleeing dragged the healers away from the
+    // line after it, and its remaining hits still soak fire meant for others.
+    if (disarmed(c)) {
+      const biters = meleeEnemies.filter(e => getRange(c, e) <= 1);
+      const medic = closest(
+        c,
+        healers.filter(h => h !== c),
+      );
+      if (biters.length > 0) fleeFrom(c, biters, matrix, 3);
+      else if (medic && getRange(c, medic) > 1) travelTo(c, medic, matrix, 1);
+      continue;
+    }
 
-    if (o.mode === 'evade' && armed.length > 0) {
+    if (o.mode === 'evade' && !contact) {
       fleeFrom(c, armed, matrix, 10);
       continue;
     }
 
-    if (engaged && nearestArmed) {
-      fight(c, s, nearestArmed, meleeEnemies, matrix);
+    if (contact && focus) {
+      const near = closest(c, armed);
+      // Too far back to help: close up on the group rather than walk into the
+      // enemy alone, unless the enemy is already on top of us.
+      if (getRange(c, anchor) > REJOIN_RANGE && (!near || getRange(c, near) > 3)) {
+        travelTo(c, anchor, matrix, 2);
+        continue;
+      }
+      // Everyone works the same target unless something is right in their face.
+      const foe = near && getRange(c, near) <= 2 ? near : focus;
+      fight(c, s, foe, meleeEnemies, matrix);
       continue;
     }
 
@@ -131,6 +177,21 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       travelTo(c, o.target, matrix, Math.max(o.range, 2));
     }
   }
+}
+
+/** The friend within `range` that most needs healing (see healNeed). */
+function neediest(from: Creep, friends: readonly Creep[], range: number): Creep | undefined {
+  let best: Creep | undefined;
+  let bestNeed = 0;
+  for (const f of friends) {
+    if (getRange(from, f) > range) continue;
+    const need = healNeed(f);
+    if (need > bestNeed) {
+      bestNeed = need;
+      best = f;
+    }
+  }
+  return best;
 }
 
 /** The member nearest the group's centre leads, so nobody gets left behind. */
@@ -151,7 +212,8 @@ function pickAnchor(army: Creep[], target: Position | undefined): Creep {
 /**
  * Movement once a creep is in the fight. Melee closes; anything with range and
  * no melee keeps out of reach of enemy melee and otherwise holds at three tiles;
- * pure healers trail the most wounded friend while staying out of melee reach.
+ * pure healers keep out of melee reach and otherwise stay next to the most
+ * wounded friend.
  */
 function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatrix): void {
   const hasMelee = countParts(c, ATTACK) > 0;
@@ -173,7 +235,22 @@ function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatri
     return;
   }
 
-  const patient = mostWounded(c, s.myCreeps, 6);
+  // Stay glued to whoever is taking damage. Hanging back out of the enemy's
+  // ranged reach left our healers five tiles behind the melee line in a rated
+  // loss, too far even for rangedHeal, while the enemy's healers stood two
+  // tiles behind theirs.
+  // With nobody hurt yet, walk in behind the front line; standing still here
+  // left healers behind when the armies met.
+  const patient =
+    neediest(c, s.myCreeps, 8) ??
+    closest(
+      c,
+      s.myCreeps.filter(f => f !== c && countParts(f, ATTACK) > 0),
+    ) ??
+    closest(
+      c,
+      s.myCreeps.filter(f => f !== c && !isRunner(f)),
+    );
   if (patient && getRange(c, patient) > 1) travelTo(c, patient, matrix, 1);
 }
 
@@ -187,29 +264,34 @@ function act(c: Creep, s: State): void {
   let attacked = false;
   let shot = false;
 
-  if (countParts(c, ATTACK) > 0) {
-    const t = pickTarget(c, s.enemyCreeps, 1);
+  const melee = meleeDamage(c);
+  if (melee > 0) {
+    const t = focusTarget(c, s.enemyCreeps, 1, melee);
     if (t) {
       c.attack(t);
       attacked = true;
     }
   }
 
-  if (countParts(c, RANGED_ATTACK) > 0) {
+  const ranged = rangedDamage(c);
+  if (ranged > 0) {
     const inRange = s.enemyCreeps.filter(e => getRange(c, e) <= 3);
     if (inRange.length > 0) {
-      const mass = inRange.reduce((sum, e) => sum + 10 * MASS_RATE[getRange(c, e)]!, 0);
-      if (mass > 10) c.rangedMassAttack();
-      else c.rangedAttack(pickTarget(c, inRange, 3)!);
+      // A mass attack spreads damage thin, and spreading is the opposite of
+      // disarming anyone. Only worth it against a crowd at close range.
+      const mass = inRange.reduce((sum, e) => sum + MASS_RATE[getRange(c, e)]!, 0);
+      if (mass >= 2.5) c.rangedMassAttack();
+      else c.rangedAttack(focusTarget(c, inRange, 3, ranged)!);
       shot = true;
     }
   }
 
-  if (countParts(c, HEAL) > 0 && !attacked) {
-    const close = mostWounded(c, s.myCreeps, 1);
+  const heal = countParts(c, HEAL) * HEAL_POWER;
+  if (heal > 0 && !attacked) {
+    const close = healTarget(c, s.myCreeps, 1, heal);
     if (close) c.heal(close);
     else if (!shot) {
-      const far = mostWounded(c, s.myCreeps, 3);
+      const far = healTarget(c, s.myCreeps, 3, heal / 3);
       if (far) c.rangedHeal(far);
     }
   }

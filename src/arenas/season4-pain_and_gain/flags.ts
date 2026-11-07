@@ -74,11 +74,31 @@ export function strength(creeps: readonly Creep[], m: Mults): number {
   return (offense * (hits + HEAL_HORIZON * heal)) / m.damageTaken;
 }
 
-/** We accept being at most this much weaker than the enemy to hold more flags. */
-const MIN_RATIO = 0.8;
-/** In the closing stretch a debuff has little time left to cost us a fight. */
-const LATE_MIN_RATIO = 0.5;
-const LATE_FRACTION = 0.15;
+/**
+ * We accept being at most this much weaker than the enemy to hold more flags.
+ * Rated games are mostly decided by one army-on-army fight, so this is tight:
+ * it allows one ranged-reduction flag (ranged is under a quarter of our
+ * damage) but not vulnerability, whose ×1.1 damage taken lost us fights.
+ *
+ * Holding the ranged flag is also bait. Against Odiodin, in every game where
+ * we sat on it they came out and took three flags themselves, which weakened
+ * them enough for us to hunt them down. In every game where we held none,
+ * they attacked at full strength and won.
+ */
+const MIN_RATIO = 0.95;
+/**
+ * In the closing stretch a debuff has less time to cost us a fight. Not much
+ * less, though: a wipe in the last 200 ticks still loses the match.
+ */
+const LATE_MIN_RATIO = 0.8;
+const LATE_FRACTION = 0.1;
+/**
+ * Before this tick a losing score is not worth weakening the army over: the
+ * opponent may still come to fight, and most of the match is left to answer.
+ */
+const PATIENCE = 500;
+/** How much weaker we will go to turn a losing score into a winning one. */
+const RISKY_MIN_RATIO = 0.8;
 
 export interface FlagPlan {
   /** Flags we want to own. Includes the ones we already do. */
@@ -123,6 +143,7 @@ export function planFlags(s: State, total: number): FlagPlan {
 
   let bestWin: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
   let bestSafe: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
+  let bestRisky: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
 
   for (let mask = 0; mask < 1 << open.length; mask += 1) {
     const take = open.filter((_, i) => mask & (1 << i));
@@ -132,6 +153,9 @@ export function planFlags(s: State, total: number): FlagPlan {
     const enemyRate = kept.reduce((a, f) => a + f.scorePerTick, 0);
     const margin = s.myScore + rate * s.remaining - (s.enemyScore + enemyRate * s.remaining);
     const ratio = ratioOf(mine, kept);
+    if (margin > 0 && ratio >= RISKY_MIN_RATIO && (!bestRisky || ratio > bestRisky.ratio)) {
+      bestRisky = { set: mine, ratio, margin };
+    }
     if (ratio < minRatio && mask !== 0) continue;
 
     const option = { set: mine, ratio, margin };
@@ -147,7 +171,12 @@ export function planFlags(s: State, total: number): FlagPlan {
     if (!bestSafe || margin > bestSafe.margin) bestSafe = option;
   }
 
-  const pick = bestWin ?? bestSafe!;
+  // Nothing safe wins on score. A sure loss on the clock is worse than a
+  // weaker army, so once the opening is over take the strongest set that wins.
+  // Two identical bots in a real game sat at 7 a tick each for 1900 ticks and
+  // the one that had captured first won by 291.
+  const losing = !bestWin && bestSafe!.margin <= 0;
+  const pick = bestWin ?? (losing && s.tick >= PATIENCE && bestRisky ? bestRisky : bestSafe!);
   const ours = strength(s.myCreeps, multsFor(owned));
   return {
     wanted: new Set(pick.set.map(f => String(f.id))),
