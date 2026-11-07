@@ -10,7 +10,9 @@ import {
 import { ATTACK_POWER, HEAL_POWER, RANGED_ATTACK_POWER } from 'game/constants';
 import type { Creep } from 'game/prototypes';
 import type { ScoreFlag } from 'arena/season_4/pain_and_gain/basic';
-import { countParts } from '../../lib/body';
+import { getRange } from 'game/utils';
+import { countParts, isArmed } from '../../lib/body';
+import { centroid } from './terrain';
 import type { State } from './state';
 
 /**
@@ -96,9 +98,9 @@ const LATE_FRACTION = 0.1;
  * Before this tick a losing score is not worth weakening the army over: the
  * opponent may still come to fight, and most of the match is left to answer.
  */
-const PATIENCE = 500;
+const PATIENCE = 150;
 /** How much weaker we will go to turn a losing score into a winning one. */
-const RISKY_MIN_RATIO = 0.8;
+const RISKY_MIN_RATIO = 0.75;
 
 export interface FlagPlan {
   /** Flags we want to own. Includes the ones we already do. */
@@ -125,14 +127,31 @@ export interface FlagPlan {
  * Owned flags cannot be given up, so they are always in the set.
  */
 export function planFlags(s: State, total: number): FlagPlan {
-  const owned = s.flags.filter(f => f.my === true);
+  // The centre flag is always wanted while nobody holds it: the army holds the
+  // centre (see army.ts), and holding a position beats attacking one.
+  const centre = s.flags.find(
+    f =>
+      f.effectType === EFF_DAMAGE_TAKEN_MODIFIER &&
+      f.my === undefined &&
+      !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
+  );
+  const owned = s.flags.filter(f => f.my === true || f === centre);
   const theirs = s.flags.filter(f => f.my === false);
   // A creep standing on a flag blocks anyone else from stepping onto it, and
   // both sides park scouts on the flags they hold. Counting such a flag as
   // takeable sent our scouts to stand next to it for the rest of the match
   // while the plan believed it was winning.
+  // Only flags on our side of their army: holding a flag means guarding it,
+  // and our scouts cannot cross their army to reach one.
+  const ourArmy = centroid(s.myCreeps.filter(isArmed));
+  const theirArmy = centroid(s.enemyCreeps.filter(isArmed));
+  const ourSide = (f: ScoreFlag): boolean =>
+    !ourArmy || !theirArmy || getRange(f, ourArmy) <= getRange(f, theirArmy);
   const open = s.flags.filter(
-    f => f.my !== true && !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
+    f =>
+      f.my !== true &&
+      !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y) &&
+      (f === centre || ourSide(f)),
   );
 
   const minRatio = s.remaining < total * LATE_FRACTION ? LATE_MIN_RATIO : MIN_RATIO;

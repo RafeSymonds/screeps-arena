@@ -1,4 +1,11 @@
-import { ATTACK, HEAL, HEAL_POWER, MOVE, RANGED_ATTACK } from 'game/constants';
+import {
+  ATTACK,
+  EFF_DAMAGE_TAKEN_MODIFIER,
+  HEAL,
+  HEAL_POWER,
+  MOVE,
+  RANGED_ATTACK,
+} from 'game/constants';
 import type { CostMatrix } from 'game/path-finder';
 import type { Creep } from 'game/prototypes';
 import type { Position } from 'game/prototypes/game-object';
@@ -22,13 +29,19 @@ const EVADE_RATIO = 0.7;
 const EVADE_MIN_GAP = 8;
 /** An armed enemy this close to the army's centre puts the whole army in the fight. */
 const CONTACT_RANGE = 8;
+/** Guarding, enemies further than this from the flag are left to come to us. */
+const GUARD_LEASH = 4;
 /** In a fight, members further than this from the centre close up before engaging. */
 const REJOIN_RANGE = 7;
 
 /** A flag-sitting scout is fair game only with no armed enemy this close to it. */
-const UNBLOCK_SAFE = 8;
-/** Enemies this close to an owned flag are a raid worth meeting. */
-const RAID_RANGE = 7;
+const UNBLOCK_SAFE = 15;
+/**
+ * Enemies this close to an owned flag are a raid worth meeting. Kept tight: at
+ * seven tiles, temik911 holding position just off the centre counted as a raid
+ * and pulled our army out of the centre into its block.
+ */
+const RAID_RANGE = 3;
 /** Escorting a capture, everyone but the capturer stays this far from the flag. */
 const ESCORT_STANDOFF = 3;
 /** How far the leader lets the group spread before it waits. */
@@ -101,7 +114,10 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
       e =>
         !isArmed(e) &&
         s.flags.some(f => f.my === false && f.x === e.x && f.y === e.y) &&
-        !enemies.some(a => getRange(a, e) <= UNBLOCK_SAFE),
+        !enemies.some(a => getRange(a, e) <= UNBLOCK_SAFE) &&
+        // Nor if their army is close to ours: leaving a standoff to chase a
+        // scout hands them the fight on their terms.
+        !(enemyCenter && getRange(enemyCenter, here) <= UNBLOCK_SAFE),
     );
     const sitter = closest(here, sitters);
     if (sitter) return { mode: 'unblock', target: sitter, range: 1 };
@@ -111,6 +127,12 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   if (pending.length > 0 && runnersAlive === 0 && here) {
     return { mode: 'escort', target: closest(here, pending), range: 0 };
   }
+
+  // Hold the centre flag whenever it is ours or nobody's. temik911 beat us
+  // forty games running by getting there first and holding it: whoever walks
+  // into a held position loses the fight.
+  const centre = s.flags.find(f => f.effectType === EFF_DAMAGE_TAKEN_MODIFIER && f.my !== false);
+  if (centre) return { mode: 'guard', target: centre, range: 2 };
 
   // Guard the owned flag the enemy is most likely to hit next, standing a step
   // off it so a creep of ours is not the thing parked on it.
@@ -195,6 +217,14 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       }
       // Everyone works the same target unless something is right in their face.
       const foe = near && getRange(c, near) <= 2 ? near : focus;
+      // Guarding, the army fights on its own ground: it does not leave the
+      // flag to go after an enemy holding position a few tiles off. Doing
+      // that walked us into temik911's held block from the centre we had
+      // just taken.
+      if (o.mode === 'guard' && o.target && getRange(foe, o.target) > GUARD_LEASH) {
+        if (getRange(c, o.target) > o.range) travelTo(c, o.target, matrix, o.range);
+        continue;
+      }
       fight(c, s, foe, meleeEnemies, matrix);
       continue;
     }
