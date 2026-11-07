@@ -127,7 +127,8 @@ export interface FlagPlan {
  * Owned flags cannot be given up, so they are always in the set.
  */
 export function planFlags(s: State, total: number): FlagPlan {
-  // The centre flag is always wanted while nobody holds it: the army holds the
+  // Against an enemy contesting the centre (see State.centreContest), the
+  // centre flag is always wanted while nobody holds it: the army holds the
   // centre (see army.ts), and holding a position beats attacking one.
   const centre = s.flags.find(
     f =>
@@ -135,7 +136,7 @@ export function planFlags(s: State, total: number): FlagPlan {
       f.my === undefined &&
       !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
   );
-  const owned = s.flags.filter(f => f.my === true || f === centre);
+  const owned = s.flags.filter(f => f.my === true || (s.centreContest === true && f === centre));
   const theirs = s.flags.filter(f => f.my === false);
   // A creep standing on a flag blocks anyone else from stepping onto it, and
   // both sides park scouts on the flags they hold. Counting such a flag as

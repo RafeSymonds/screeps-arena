@@ -24,6 +24,12 @@ import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets'
  * at 1.25 we left the centre to hunt temik911 and lost the fight.
  */
 const HUNT_RATIO = 1.6;
+/**
+ * Against an enemy that left the centre alone, the old threshold. Odiodin
+ * weakens itself taking flags when we sit on one, and hunting it at 1.25 won
+ * four games of four.
+ */
+const HUNT_RATIO_OPEN = 1.25;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
 const EVADE_RATIO = 0.7;
 /**
@@ -91,7 +97,8 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     s.myScore + s.myRate * s.remaining - (s.enemyScore + s.enemyRate * s.remaining) >
     Math.max(200, 2 * s.remaining);
 
-  if (here && enemies.length > 0 && plan.ratio >= HUNT_RATIO) {
+  const huntAt = s.centreContest === false ? HUNT_RATIO_OPEN : HUNT_RATIO;
+  if (here && enemies.length > 0 && plan.ratio >= huntAt) {
     return { mode: 'hunt', target: closest(here, enemies), range: 1 };
   }
 
@@ -135,8 +142,10 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // Hold the centre flag whenever it is ours or nobody's. temik911 beat us
   // forty games running by getting there first and holding it: whoever walks
   // into a held position loses the fight.
+  // Until we know the enemy is leaving the centre alone, head there: against
+  // one racing for it, arriving second loses.
   const centre = s.flags.find(f => f.effectType === EFF_DAMAGE_TAKEN_MODIFIER && f.my !== false);
-  if (centre) return { mode: 'guard', target: centre, range: 2 };
+  if (centre && s.centreContest !== false) return { mode: 'guard', target: centre, range: 2 };
 
   // Guard the owned flag the enemy is most likely to hit next, standing a step
   // off it so a creep of ours is not the thing parked on it.
