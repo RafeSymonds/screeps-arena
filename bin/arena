@@ -112,7 +112,7 @@ cmd_sim() {
       [[ "$arg" == "--arena" ]] && { skip=1; continue; }
       args+=("$arg")
     done
-    node "$ROOT/tools/sim/pain-and-gain.mjs" "${args[@]}"
+    node "$ROOT/tools/sim/pain-and-gain.mjs" ${args[@]+"${args[@]}"}
     return
   fi
   node "$ROOT/tools/sim/run.mjs" "$@"
@@ -170,6 +170,33 @@ cmd_test() {
   ARENA_FILTER="$arena" npx rollup -c --silent
   client_node "$ROOT/tools/client/test.mjs" "$@"
 }
+# Save a committed build as a sim opponent: versions/<arena>/<label>.mjs.
+# Builds the given git ref (default HEAD) in a scratch copy, so what is saved
+# is exactly that commit; uncommitted changes are not included.
+cmd_snapshot() {
+  have_deps
+  local arena="season4-pain_and_gain" ref="HEAD" label="" prev=""
+  for arg in "$@"; do
+    case "$prev" in
+      --arena) arena="$arg" ;;
+      --ref) ref="$arg" ;;
+      *) [[ "$arg" != --* ]] && label="$arg" ;;
+    esac
+    prev="$arg"
+  done
+  local sha; sha="$(git -C "$ROOT" rev-parse --short "$ref")" || die "no such ref: $ref"
+  [[ -n "$label" ]] || label="$sha"
+  local tmp; tmp="$(mktemp -d)"
+  git -C "$ROOT" archive "$ref" | tar -x -C "$tmp"
+  ln -s "$ROOT/node_modules" "$tmp/node_modules"
+  (cd "$tmp" && ARENA_FILTER="$arena" ARENA_GAME_DIR="$tmp/game" npx rollup -c --silent) ||
+    { rm -rf "$tmp"; die "build of $ref failed"; }
+  mkdir -p "$ROOT/versions/$arena"
+  cp "$tmp/dist/$arena/main.mjs" "$ROOT/versions/$arena/$label.mjs"
+  rm -rf "$tmp"
+  echo "saved $arena at $sha as versions/$arena/$label.mjs"
+}
+
 # Rated games through normal matchmaking: these move the account's rating.
 cmd_play() {
   local count="${1:-1}"
@@ -257,6 +284,9 @@ build
   test [--arena a] [--repeat n] [--opponent name] [--list]
                     build, then play real unrated test matches vs saved opponents
   play [n] [--arena a]  build, then play n RATED games (moves rating)
+  snapshot [label] [--ref r] [--arena a]
+                    save the build of a commit (default HEAD) to versions/ as
+                    a sim opponent
   games             list finished matches (archive + game client's cache)
   review <id>       replay one of them — console output, timeline, enemy bodies
                     (`latest`, or `loss` for the newest loss; --step N to thin)
@@ -274,10 +304,10 @@ sim options
   --side <1|2>       which end of the map to play (default: both)
   --ticks <n>        tick limit per match (default 2000)
   --trace [--every n]  print positions and flag captures for a single match
-  --arena season4-pain_and_gain  Pain and Gain instead: opponents passive |
-                     greedy | brawler | focus | turtle | mirror (the bot itself)
-                     | bundle:<file> (another build), --game <archived id> to
-                     start from that match's map
+  --arena season4-pain_and_gain  Pain and Gain: plays every saved build in
+                     versions/ (see snapshot) plus a do-nothing crash check;
+                     --opponent passive | mirror | <version name> | bundle:<file>,
+                     --game <archived id> to start from that match's map
   A clean sweep is evidence the bot behaves, not proof it wins: the simulator is
   a model of the engine and the opponents are scripts. See tools/sim/README.md.
 
@@ -302,6 +332,7 @@ case "${1:-}" in
   client)        shift; cmd_client "$@" ;;
   fetch)         shift; cmd_fetch "$@" ;;
   test)          shift; cmd_test "$@" ;;
+  snapshot)      shift; cmd_snapshot "$@" ;;
   play)          shift; cmd_play "$@" ;;
   games)         shift; cmd_games "$@" ;;
   review)        shift; cmd_review "$@" ;;

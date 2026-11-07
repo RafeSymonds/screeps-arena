@@ -2,3 +2,5 @@
 tools/sim/fixtures/
 tools/sim/stubs/constants.mjs
 game/
+# Built bundles saved by `bin/arena snapshot`: generated, never hand-edited.
+versions/

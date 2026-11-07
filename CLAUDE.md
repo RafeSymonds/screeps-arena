@@ -25,11 +25,12 @@ Everything goes through `bin/arena` — don't call rollup/tsc directly.
 | `bin/arena sync`                                 | refresh vendored typings and docs from the installed client |
 
 **Neither gate proves a bot works.** `bin/arena check` proves the code compiles.
-`bin/arena sim` plays it against scripted opponents inside a model of the engine
-written from these docs — good at catching runtime faults and incoherent
-behaviour, useless for discovering that a rule was misread, because the model and
-the bot share the same misconceptions. The opponents are scripts, and the
-fixture holds one sample of terrain that the real arena regenerates every match.
+`bin/arena sim` plays it inside a model of the engine written from these docs
+(scripted opponents for Spawn Strike, our own saved builds for Pain and Gain) —
+good at catching runtime faults and incoherent behaviour, useless for
+discovering that a rule was misread, because the model and the bot share the
+same misconceptions. The fixture holds one sample of terrain that the real
+arena regenerates every match.
 
 **How to test and analyse the bot end to end is in `docs/testing.md`.**
 
@@ -154,8 +155,10 @@ real game 6aef6316c816bdd1c0647158 (unrated test vs System):
 - The match ends early when an army is gone or a lead can no longer be caught.
 - The sandbox exposes no score; the bot counts it from flag ownership. Flags
   read `my === undefined` until someone captures them.
-- `bin/arena sim --arena season4-pain_and_gain` plays it offline
-  (`tools/sim/pain-and-gain.mjs`), including against the bot itself.
+- `bin/arena sim --arena season4-pain_and_gain` plays the current build
+  offline against our own earlier builds (`bin/arena snapshot` saves one to
+  `versions/`), never against scripts imitating real players. Real players are
+  tested with `bin/arena test`.
 - In test mode the only opponent offered is System, which does nothing.
 
 ## Recovering arena facts

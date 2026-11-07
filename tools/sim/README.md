@@ -40,7 +40,7 @@ Behaviour against a real opponent still has to be watched in the client.
 | file                  | what it is                                                     |
 | --------------------- | -------------------------------------------------------------- |
 | `run.mjs`             | CLI: loads the bundle, plays the matches, prints the table     |
-| `pain-and-gain.mjs`   | the same for Pain and Gain: flags, score, debuffs, self-play   |
+| `pain-and-gain.mjs`   | Pain and Gain: flags, score, debuffs, vs our saved builds      |
 | `engine.mjs`          | the world model and tick resolution                            |
 | `opponents.mjs`       | the scripted opponents                                         |
 | `hooks.mjs`           | ESM resolve hook mapping `game/*` onto the stubs               |
@@ -159,3 +159,23 @@ energy trickle. `CostMatrix` and an A* honouring `plainCost`, `swampCost`,
   `withdraw`, `pickup`, `drop`, `pull`, decay — is absent, because Spawn Strike
   has none of it. Add it before pointing this at another arena.
 - **`arenaInfo`** is hardcoded to the values Spawn Strike reports.
+
+## Pain and Gain: our own builds only
+
+`bin/arena sim --arena season4-pain_and_gain` plays the current build against
+every earlier build saved with `bin/arena snapshot` (in
+`versions/season4-pain_and_gain/`), from both sides, plus `passive`, a bot that
+does nothing. A crash, or failing to beat `passive`, fails the run. Results
+against saved builds are printed but do not fail it.
+
+It has no scripted opponents on purpose. Scripts written to imitate real
+players (a greedy flag-taker, a hunting blob, a turtle, and a copy of
+MetalicaX's focus fire) were all beaten easily while the players they imitated
+kept winning in real games. What the simulator can honestly answer is whether
+a change beats our own previous builds and whether it crashes. Real opponents
+are tested with `bin/arena test`. See `docs/testing.md`.
+
+```sh
+bin/arena snapshot focus-fire --ref 93733db   # save a commit's build as an opponent
+bin/arena sim --arena season4-pain_and_gain   # current source vs every saved build
+```

@@ -3,12 +3,12 @@
 Three levels of evidence, cheapest first. Each catches things the one before
 cannot.
 
-| level       | command              | runs where                | proves                                         |
-| ----------- | -------------------- | ------------------------- | ---------------------------------------------- |
-| compiles    | `bin/arena check`    | offline                   | the code typechecks                            |
-| simulated   | `bin/arena sim`      | offline, our engine model | no crashes, coherent behaviour under our rules |
-| real, free  | `bin/arena test`     | arena server, unrated     | how it plays real opponents' code              |
-| real, rated | `bin/arena play [n]` | arena server, ranked      | the same, against whoever matchmaking picks    |
+| level       | command              | runs where                | proves                                      |
+| ----------- | -------------------- | ------------------------- | ------------------------------------------- |
+| compiles    | `bin/arena check`    | offline                   | the code typechecks                         |
+| simulated   | `bin/arena sim`      | offline, our engine model | no crashes; beats our own earlier builds    |
+| real, free  | `bin/arena test`     | arena server, unrated     | how it plays real opponents' code           |
+| real, rated | `bin/arena play [n]` | arena server, ranked      | the same, against whoever matchmaking picks |
 
 The simulator shares our misreadings of the rules by construction (see
 `tools/sim/README.md`). Only `test` and `play` run the real engine, and only

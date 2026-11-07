@@ -1,23 +1,31 @@
 // Offline Pain and Gain: plays the built season4-pain_and_gain bundle against
-// scripted opponents, or against itself, on a real match's starting position.
+// our own earlier builds on a real match's starting position.
 //
-//   node tools/sim/pain-and-gain.mjs                       every opponent, both sides
-//   node tools/sim/pain-and-gain.mjs --opponent mirror --side 2 --trace
-//   node tools/sim/pain-and-gain.mjs --opponent bundle:old.mjs  vs another build
-//   node tools/sim/pain-and-gain.mjs --game <archived id>  that match's terrain and opening
+//   node tools/sim/pain-and-gain.mjs                      every saved build, both sides
+//   node tools/sim/pain-and-gain.mjs --opponent focus-fire --side 2 --trace
+//   node tools/sim/pain-and-gain.mjs --opponent bundle:some/other/main.mjs
+//   node tools/sim/pain-and-gain.mjs --game <archived id> that match's terrain and opening
 //
-// The same caveat as run.mjs applies: the engine is a model written from the
-// docs, so this finds crashes and incoherent play, not misread rules. See
-// README.md. Arena rules modelled here, from the arena description:
+// Opponents are the builds saved in versions/season4-pain_and_gain/ by
+// `bin/arena snapshot`, plus `passive`, which does nothing and is only there
+// to catch a bot that crashes. Scripted opponents written to imitate real
+// players were tried and dropped: the bot beat every one of them while
+// losing to the players they imitated. Real opponents are tested with
+// `bin/arena test`; this is for regressions against ourselves and crashes.
+//
+// Both sides share the engine model's misreadings of the rules, so a result
+// here says one build beats another under our understanding of the game, not
+// that either wins for real. See README.md. Arena rules modelled here, from the
+// arena description:
 //   - standing on a ScoreFlag captures it; it scores scorePerTick for its owner
 //     every tick and debuffs the owner's whole army (STACKING below);
 //   - highest score at tick 2000 wins; wiping out the other army wins outright;
 //   - the match ends early once the trailing side cannot catch up even holding
 //     every flag (MAX_SCORE_PER_TICK) for the rest of the match.
 import { register } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 
 import {
   beginTick,
@@ -29,8 +37,6 @@ import {
   state,
 } from './engine.mjs';
 import { readArchive } from '../replay/archive.mjs';
-import { searchPath } from './stubs/path-finder.mjs';
-import { getRange, getDirection } from './stubs/utils.mjs';
 import * as C from './stubs/constants.mjs';
 
 register('./hooks.mjs', import.meta.url);
@@ -124,186 +130,47 @@ function setUp(fixture, me) {
 
 // --- opponents ----------------------------------------------------------------
 
-const parts = (c, type) => c.body.filter(p => p.type === type && p.hits > 0).length;
 const creepsOf = side =>
   state.objects.filter(o => o instanceof P.Creep && o.exists && o.owner === side);
-const nearest = (from, list) =>
-  list.reduce((best, o) => (!best || getRange(from, o) < getRange(from, best) ? o : best), null);
 
-function stepTo(c, goal, range) {
-  if (getRange(c, goal) <= range) return;
-  const step = searchPath(c, { pos: goal, range }, {}).path[0];
-  if (step) c.move(getDirection(step.x - c.x, step.y - c.y));
+const VERSIONS = new URL(`../../versions/${ARENA}/`, import.meta.url);
+
+/** Saved builds by name, from `bin/arena snapshot`. */
+function savedBuilds() {
+  if (!existsSync(VERSIONS)) return {};
+  return Object.fromEntries(
+    readdirSync(VERSIONS)
+      .filter(f => f.endsWith('.mjs'))
+      .map(f => [f.slice(0, -4), fileURLToPath(new URL(f, VERSIONS))]),
+  );
 }
-
-/** Swing at whatever is in reach and patch up whoever is hurt. Shared by every script. */
-function fightInPlace(c, foes, friends) {
-  const close = nearest(c, foes);
-  if (close && parts(c, C.ATTACK) > 0 && getRange(c, close) <= 1) c.attack(close);
-  if (close && parts(c, C.RANGED_ATTACK) > 0 && getRange(c, close) <= 3) c.rangedAttack(close);
-  if (parts(c, C.HEAL) > 0) {
-    const hurt = friends
-      .filter(f => f.hits < f.hitsMax && getRange(c, f) <= 3)
-      .sort((a, b) => a.hits / a.hitsMax - b.hits / b.hitsMax)[0];
-    if (hurt && getRange(c, hurt) <= 1) c.heal(hurt);
-    else if (hurt) c.rangedHeal(hurt);
-  }
-}
-
-const armed = c => parts(c, C.ATTACK) + parts(c, C.RANGED_ATTACK) > 0;
-
-/**
- * Scripted styles. Each is a function of the side it plays and returns a
- * per-tick callback. `mirror` is the bot itself, loaded a second time.
- */
-const SCRIPTS = {
-  /** The arena's System bot: in the one real game against it, it did nothing at all. */
-  passive: () => () => {},
-
-  /** Everything runs for the nearest flag it does not own, fighting on the way. */
-  greedy: side => () => {
-    const mine = creepsOf(side);
-    const foes = state.objects.filter(o => o instanceof P.Creep && o.owner !== side);
-    const claimed = new Set();
-    for (const c of mine) {
-      fightInPlace(c, foes, mine);
-      const goal = nearest(
-        c,
-        flags().filter(f => f.owner !== side && !claimed.has(f)),
-      );
-      if (goal) {
-        claimed.add(goal);
-        stepTo(c, goal, 0);
-      } else {
-        const foe = nearest(c, foes);
-        if (foe) stepTo(c, foe, 1);
-      }
-    }
-  },
-
-  /**
-   * Scouts take the two nearest flags; the army ignores flags and hunts as one
-   * blob, so it never carries more than those two debuffs.
-   */
-  brawler: side => {
-    return () => {
-      const mine = creepsOf(side);
-      const foes = state.objects.filter(o => o instanceof P.Creep && o.owner !== side);
-      const army = mine.filter(armed);
-      const lead = army[0];
-      const prey = lead ? nearest(lead, foes) : null;
-      for (const c of mine) {
-        fightInPlace(c, foes, mine);
-        if (!armed(c) && parts(c, C.HEAL) === 0) {
-          const goal = nearest(
-            c,
-            flags().filter(f => f.owner !== side),
-          );
-          if (goal && flags().filter(f => f.owner === side).length < 2) stepTo(c, goal, 0);
-          continue;
-        }
-        if (lead && c !== lead && getRange(c, lead) > 3) stepTo(c, lead, 1);
-        else if (prey) stepTo(c, prey, parts(c, C.ATTACK) > 0 ? 1 : 3);
-      }
-    };
-  },
-
-  /**
-   * One tight blob that walks at the nearest enemy and focuses it: every melee
-   * on the same creep, ranged at two to three tiles, healers on whoever is
-   * lowest. Modelled on MetalicaX, who beat every version of the bot in real
-   * games by arriving all at once and killing our front creep in a few ticks.
-   */
-  focus: side => () => {
-    const mine = creepsOf(side);
-    const foes = state.objects.filter(o => o instanceof P.Creep && o.owner !== side);
-    const army = mine.filter(c => armed(c) || parts(c, C.HEAL) > 0);
-    if (army.length === 0 || foes.length === 0) return;
-    const mid = {
-      x: Math.round(army.reduce((a, c) => a + c.x, 0) / army.length),
-      y: Math.round(army.reduce((a, c) => a + c.y, 0) / army.length),
-    };
-    const prey = nearest(mid, foes.filter(armed).length ? foes.filter(armed) : foes);
-    const lead = Math.min(...army.map(c => getRange(c, prey)));
-    for (const c of mine) {
-      const inReach = foes.filter(f => getRange(c, f) <= 1);
-      if (parts(c, C.ATTACK) > 0 && inReach.length)
-        c.attack(inReach.includes(prey) ? prey : inReach[0]);
-      if (parts(c, C.RANGED_ATTACK) > 0) {
-        const shot = getRange(c, prey) <= 3 ? prey : nearest(c, foes);
-        if (shot && getRange(c, shot) <= 3) c.rangedAttack(shot);
-      }
-      if (parts(c, C.HEAL) > 0) {
-        const hurt = mine
-          .filter(f => f.hits < f.hitsMax && getRange(c, f) <= 3)
-          .sort((a, b) => a.hits / a.hitsMax - b.hits / b.hitsMax)[0];
-        if (hurt && getRange(c, hurt) <= 1) c.heal(hurt);
-        else if (hurt) c.rangedHeal(hurt);
-      }
-      // Nobody steps more than two tiles ahead of the closest member, so the
-      // blob arrives together.
-      const d = getRange(c, prey);
-      if (d > lead + 2 && getRange(c, mid) <= 3) {
-        stepTo(c, prey, d - 1);
-        continue;
-      }
-      if (parts(c, C.ATTACK) > 0) stepTo(c, prey, 1);
-      else if (parts(c, C.RANGED_ATTACK) > 0) stepTo(c, prey, 2);
-      else if (parts(c, C.HEAL) > 0) {
-        const hurt = mine
-          .filter(f => f !== c && f.hits < f.hitsMax)
-          .sort((a, b) => getRange(c, a) - getRange(c, b))[0];
-        stepTo(c, hurt ?? mid, 1);
-      } else stepTo(c, mid, 2);
-    }
-  },
-
-  /** Takes the vulnerability flag and everything ranged-only, then holds the centre. */
-  turtle: side => () => {
-    const mine = creepsOf(side);
-    const foes = state.objects.filter(o => o instanceof P.Creep && o.owner !== side);
-    const wanted = flags().filter(
-      f =>
-        f.effectType === C.EFF_DAMAGE_TAKEN_MODIFIER ||
-        f.effectType === C.EFF_RANGED_ATTACK_MODIFIER,
-    );
-    const centre = { x: 49, y: 49 };
-    const scouts = mine.filter(c => !armed(c) && parts(c, C.HEAL) === 0);
-    const todo = wanted.filter(f => f.owner !== side);
-    for (const c of mine) {
-      fightInPlace(c, foes, mine);
-      if (scouts.includes(c)) {
-        const goal = todo[scouts.indexOf(c) % Math.max(1, todo.length)];
-        if (goal) stepTo(c, goal, 0);
-        continue;
-      }
-      const threat = nearest(
-        c,
-        foes.filter(f => getRange(f, centre) <= 8),
-      );
-      if (threat) stepTo(c, threat, parts(c, C.ATTACK) > 0 ? 1 : 3);
-      else stepTo(c, centre, 3);
-    }
-  },
-};
 
 // --- matches ----------------------------------------------------------------
 
 let loads = 0;
-const loadBot = (file = bundle) =>
-  import(`${pathToFileURL(path.resolve(file)).href}?run=${loads++}`);
-/** Opponents that are a whole bot rather than a script: itself, or another build. */
-const isBot = style => style === 'mirror' || style.startsWith('bundle:');
+const loadBot = file => import(`${pathToFileURL(path.resolve(file)).href}?run=${loads++}`);
 
-async function play(style, side, fixture, trace) {
+/** The bundle file an opponent name plays, or null for `passive`. */
+function opponentFile(name) {
+  if (name === 'passive') return null;
+  if (name === 'mirror') return bundle;
+  if (name.startsWith('bundle:')) return name.slice('bundle:'.length);
+  const file = savedBuilds()[name];
+  if (!file) {
+    const known = ['passive', 'mirror', ...Object.keys(savedBuilds())].join(' | ');
+    console.error(`unknown opponent ${name}: ${known} | bundle:<file>`);
+    process.exit(2);
+  }
+  return file;
+}
+
+async function play(name, side, fixture, trace) {
   const me = side === 2 ? 'player2' : 'player1';
   const foe = side === 2 ? 'player1' : 'player2';
   setUp(fixture, me);
-  const bot = await loadBot();
-  const twin = isBot(style)
-    ? await loadBot(style === 'mirror' ? bundle : style.slice('bundle:'.length))
-    : null;
-  const script = twin ? null : SCRIPTS[style](foe);
+  const bot = await loadBot(bundle);
+  const file = opponentFile(name);
+  const twin = file ? await loadBot(file) : null;
 
   const score = { [me]: 0, [foe]: 0 };
   const quiet = console.log;
@@ -323,12 +190,10 @@ async function play(style, side, fixture, trace) {
       // The opponent always runs with console muted; its log is not ours.
       console.log = () => {};
       try {
-        if (twin) {
-          setSide(foe);
-          twin.loop();
-        } else script();
+        setSide(foe);
+        twin?.loop();
       } catch (error) {
-        crash = { tick: state.tick, error, who: style };
+        crash = { tick: state.tick, error, who: name };
       }
     }
     console.log = quiet;
@@ -383,42 +248,39 @@ async function play(style, side, fixture, trace) {
 }
 
 const fixture = loadFixture();
-const styles = has('opponent') ? [flag('opponent')] : [...Object.keys(SCRIPTS), 'mirror'];
+const names = has('opponent') ? [flag('opponent')] : ['passive', ...Object.keys(savedBuilds())];
 const sides = has('side') ? [Number(flag('side'))] : [1, 2];
-const single = styles.length === 1 && sides.length === 1;
-for (const s of styles) {
-  if (!isBot(s) && !SCRIPTS[s]) {
-    console.error(`unknown opponent ${s}: ${[...Object.keys(SCRIPTS), 'mirror'].join(' | ')}`);
-    process.exit(2);
-  }
-}
+const single = names.length === 1 && sides.length === 1;
+for (const n of names) opponentFile(n);
 
 console.log(
   `arena ${ARENA} · ${flag('game') ? `game ${flag('game')}` : 'fixture pain-and-gain'} · ${TICKS} ticks\n`,
 );
-let failures = 0;
-for (const style of styles) {
+// A crash, or failing to beat a bot that does nothing, is a broken build.
+// Results against our own builds are information: a new build is meant to
+// beat old ones, but losing one side of a symmetric map can be the map.
+let broken = 0;
+const tally = { win: 0, loss: 0, draw: 0 };
+for (const name of names) {
   for (const side of sides) {
-    const o = await play(style, side, fixture, TRACE && single);
+    const o = await play(name, side, fixture, TRACE && single);
     if (o.crash) {
-      failures += 1;
-      console.log(`${style} as player${side}: ${o.crash.who} CRASHED on tick ${o.crash.tick}`);
+      broken += 1;
+      console.log(`${name} as player${side}: ${o.crash.who} CRASHED on tick ${o.crash.tick}`);
       console.log(o.crash.error);
       continue;
     }
-    // Self-play is symmetric: a draw or either result is information, not failure.
-    if (o.result !== 'win' && !isBot(style)) failures += 1;
+    if (name === 'passive' && o.result !== 'win') broken += 1;
+    else if (name !== 'passive') tally[o.result] += 1;
     const verdict = { win: 'win ', loss: 'LOSS', draw: 'DRAW' }[o.result];
     console.log(
-      `${style.padEnd(8)} ${o.side.padEnd(7)}  ${verdict}  t${String(o.tick).padStart(4)}  ` +
+      `${name.padEnd(14)} ${o.side.padEnd(7)}  ${verdict}  t${String(o.tick).padStart(4)}  ` +
         `score ${o.score.padEnd(13)} creeps ${o.creeps.padEnd(5)}  flags ${o.flags}`,
     );
   }
 }
-const scripted = styles.filter(s => !isBot(s)).length * sides.length;
 console.log(
-  failures === 0
-    ? '\nno scripted match lost'
-    : `\n${failures} of ${scripted} scripted matches not won`,
+  `\nagainst saved builds: ${tally.win} won, ${tally.loss} lost, ${tally.draw} drawn` +
+    (broken ? `\n${broken} broken (crash, or failed to beat passive)` : ''),
 );
-process.exit(failures === 0 ? 0 : 1);
+process.exit(broken === 0 ? 0 : 1);
