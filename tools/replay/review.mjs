@@ -19,8 +19,8 @@ const target = argv.find(a => !a.startsWith('--') && argv[argv.indexOf(a) - 1]?.
 const games = collectGames();
 if (games.length === 0) {
   console.error(
-    'No games in the client cache.\n' +
-      'Open a match in Screeps Arena and scrub its replay to the end, then try again.',
+    'No games in the archive or the client cache.\n' +
+      "Run 'bin/arena fetch' with the client open, or scrub a replay in the client, then try again.",
   );
   process.exit(1);
 }
@@ -48,7 +48,7 @@ function summarise(game) {
 }
 
 if (!target) {
-  console.log('cached games (newest first)\n');
+  console.log('archived and cached games (newest first)\n');
   console.log('id                        when              result  ticks  side      opponent           replay');
   for (const game of games) {
     const s = summarise(game);
@@ -61,7 +61,7 @@ if (!target) {
   console.log(
     '\nreview one with:  bin/arena review <id>   (or `latest`, or `loss` for the newest loss)',
   );
-  console.log('a game with 0 frames was never opened in the client — scrub its replay first.');
+  console.log("a game with 0 frames is cache-only and was never opened — 'bin/arena fetch <id>' gets all of it.");
   process.exit(0);
 }
 
@@ -95,7 +95,7 @@ if (game.logs.length > 0) {
 }
 
 if (game.frames.length === 0) {
-  console.log('\nNo replay frames cached — open this match in the client and scrub to the end.');
+  console.log(`\nNo replay frames — run 'bin/arena fetch ${game.id}' with the client open.`);
   process.exit(0);
 }
 

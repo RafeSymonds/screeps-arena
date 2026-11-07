@@ -130,6 +130,24 @@ cmd_deploy() {
 cmd_games()  { have_deps; node "$ROOT/tools/replay/review.mjs" "$@"; }
 cmd_review() { have_deps; node "$ROOT/tools/replay/review.mjs" "${1:-latest}" "${@:2}"; }
 
+# Talk to the arena server through the running client's debug port; see
+# tools/client/README.md. Node 20 needs the flag for a global WebSocket.
+client_node() { node --experimental-websocket --no-warnings "$@"; }
+cmd_client() {
+  case "${1:-status}" in
+    launch) open "steam://rungameid/1137320"; echo "launched via Steam — the debug port needs the launch option set (tools/client/README.md)" ;;
+    status) client_node --input-type=module -e "
+      import { connect } from '$ROOT/tools/client/cdp.mjs';
+      const c = await connect();
+      try {
+        const { season } = await c.api('/season/current');
+        console.log('client connected, API reachable — current season: ' + (season?.name ?? season?._id ?? '?'));
+      } finally { c.close(); }" ;;
+    *) die "usage: bin/arena client [status|launch]" ;;
+  esac
+}
+cmd_fetch() { client_node "$ROOT/tools/client/fetch.mjs" "$@"; }
+
 # The client auto-updates its typings; pull them back into the repo so the
 # checked-in copy matches the installed game version.
 cmd_sync_typings() {
@@ -204,7 +222,9 @@ build
   deploy [filter]   copy built bundles into the client folder
   check             typecheck without emitting
   sim [options]     play the built bundle against scripted opponents (see below)
-  games             list finished matches found in the game client's cache
+  client [status|launch]  check (or start) the game client's debug connection
+  fetch [ids] [--force]   archive recent matches from the arena API into matches/
+  games             list finished matches (archive + game client's cache)
   review <id>       replay one of them — console output, timeline, enemy bodies
                     (`latest`, or `loss` for the newest loss; --step N to thin)
   fmt               prettier
@@ -227,6 +247,8 @@ sim options
 env: ARENA_GAME_DIR  client script folders (default <repo>/game)
      ARENA_APP_DIR   installed client app dir (for typings and docs)
      ARENA_CACHE_DIR client HTTP cache (for tools/sim/extract-fixture.mjs)
+     ARENA_ARCHIVE_DIR  match archive written by fetch (default <repo>/matches)
+     ARENA_DEBUG_PORT   client debug port (default 9222)
 USAGE
 }
 
@@ -240,6 +262,8 @@ case "${1:-}" in
   deploy)        shift; cmd_deploy "$@" ;;
   check)         cmd_check ;;
   sim)           shift; cmd_sim "$@" ;;
+  client)        shift; cmd_client "$@" ;;
+  fetch)         shift; cmd_fetch "$@" ;;
   games)         shift; cmd_games "$@" ;;
   review)        shift; cmd_review "$@" ;;
   fmt)           cmd_fmt ;;

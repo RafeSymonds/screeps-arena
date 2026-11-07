@@ -4,10 +4,12 @@
 // fetched is sitting in its cache: game records, whole replays, and the console
 // output your own bot printed. This is the only way to look at a finished match
 // from outside the client.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import zlib from 'node:zlib';
+
+import { readArchive } from './archive.mjs';
 
 export const CACHE_DIR =
   process.env.ARENA_CACHE_DIR ||
@@ -41,6 +43,7 @@ function deflateStart(buf, at) {
  */
 export function readEntries({ match } = {}) {
   const out = [];
+  if (!existsSync(CACHE_DIR)) return out;
   for (const name of readdirSync(CACHE_DIR)) {
     if (!name.endsWith('_0')) continue;
     const file = path.join(CACHE_DIR, name);
@@ -93,8 +96,20 @@ export function framesOf(body) {
   return json(`${body.slice(0, cut)}}]`) ?? [];
 }
 
-/** Everything cached about one game, keyed by id. */
+/**
+ * Every known game, newest first: the local archive (tools/client/fetch.mjs)
+ * plus whatever the client's cache holds. The archive is complete, so it wins
+ * when a game is in both.
+ */
 export function collectGames() {
+  const byId = new Map();
+  for (const game of collectCachedGames()) byId.set(game.id, game);
+  for (const game of readArchive()) byId.set(game.id, game);
+  return [...byId.values()].sort((a, b) => b.mtime - a.mtime);
+}
+
+/** Everything cached about one game, keyed by id. */
+function collectCachedGames() {
   const games = new Map();
   const touch = id => {
     if (!games.has(id)) games.set(id, { id, record: null, frames: [], logs: [], mtime: 0 });

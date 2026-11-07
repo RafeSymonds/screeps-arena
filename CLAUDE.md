@@ -16,6 +16,8 @@ Everything goes through `bin/arena` — don't call rollup/tsc directly.
 | `bin/arena deploy [filter]`                      | copy built bundles to the client without rebuilding         |
 | `bin/arena check`                                | `tsc --noEmit`                                              |
 | `bin/arena sim [options]`                        | play the built bundle against scripted opponents offline    |
+| `bin/arena fetch [ids]`                          | archive real matches from the arena API (needs client open) |
+| `bin/arena games` / `review <id>`                | list and inspect archived or cached matches                 |
 | `bin/arena new <arena-name>`                     | scaffold `src/arenas/<arena-name>/main.ts`                  |
 | `bin/arena sync`                                 | refresh vendored typings and docs from the installed client |
 
@@ -43,6 +45,8 @@ dist/                     GENERATED — build output (gitignored)
 game/<name>/              what the client reads; contents gitignored
 tools/                    the generators behind `bin/arena sync`
 tools/sim/                offline simulator behind `bin/arena sim`
+tools/client/             talks to the arena API through the running client
+matches/                  match archive written by `bin/arena fetch` (gitignored)
 ```
 
 `src/arenas/<name>` must match the client's folder name under `game/`

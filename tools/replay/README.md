@@ -1,7 +1,10 @@
 # Match review
 
-Reads finished matches out of the game client's HTTP cache: the game record, the
-replay frames, and the console output your own bot printed.
+Reads finished matches from the local archive (`bin/arena fetch`, see
+`tools/client/README.md`) and the game client's HTTP cache: the game record, the
+replay frames, and the console output your own bot printed. With the client
+open, `bin/arena fetch` is the easy path and the rest of this section is only
+needed without it.
 
 ```sh
 bin/arena games              # what is cached
