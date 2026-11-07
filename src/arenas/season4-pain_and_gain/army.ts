@@ -456,10 +456,10 @@ function act(c: Creep, s: State): void {
 
   const heal = countParts(c, HEAL) * HEAL_POWER;
   if (heal > 0 && !attacked) {
-    const close = healTarget(c, s.myCreeps, 1, heal);
+    const close = healTarget(c, s.myCreeps, 1, heal, s.enemyCreeps);
     if (close) c.heal(close);
     else if (!shot) {
-      const far = healTarget(c, s.myCreeps, 3, heal / 3);
+      const far = healTarget(c, s.myCreeps, 3, heal / 3, s.enemyCreeps);
       if (far) c.rangedHeal(far);
     }
   }
