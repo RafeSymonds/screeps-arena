@@ -141,6 +141,7 @@ export function planFlags(s: State, total: number): FlagPlan {
   const buffer = Math.max(200, 4 * s.remaining);
 
   const enemyNow = strength(s.enemyCreeps, multsFor(theirs));
+  const ours = strength(s.myCreeps, multsFor([]));
   const ratioOf = (mine: ScoreFlag[], kept: ScoreFlag[]): number => {
     const ours = strength(s.myCreeps, multsFor(mine));
     const them = strength(s.enemyCreeps, multsFor(kept));
@@ -162,7 +163,11 @@ export function planFlags(s: State, total: number): FlagPlan {
     if (margin > 0 && ratio >= RISKY_MIN_RATIO && (!bestRisky || ratio > bestRisky.ratio)) {
       bestRisky = { set: mine, ratio, margin };
     }
-    if (ratio < minRatio && mask !== 0) continue;
+    // The safety bar is what a set costs our own army, not where it leaves us
+    // against theirs. Measured against the enemy, their holding one flag let
+    // us take vulnerability, and we went into the fight at x1.1 damage taken.
+    const cost = ours > 0 ? strength(s.myCreeps, multsFor(mine)) / ours : 1;
+    if (cost < minRatio && mask !== 0) continue;
 
     const option = { set: mine, ratio, margin };
     if (margin > buffer) {
@@ -183,10 +188,10 @@ export function planFlags(s: State, total: number): FlagPlan {
   // the one that had captured first won by 291.
   const losing = !bestWin && bestSafe!.margin <= 0;
   const pick = bestWin ?? (losing && s.tick >= PATIENCE && bestRisky ? bestRisky : bestSafe!);
-  const ours = strength(s.myCreeps, multsFor(owned));
+  const now = strength(s.myCreeps, multsFor(owned));
   return {
     wanted: new Set(pick.set.map(f => String(f.id))),
-    ratio: enemyNow > 0 ? ours / enemyNow : Infinity,
+    ratio: enemyNow > 0 ? now / enemyNow : Infinity,
     margin: pick.margin,
   };
 }

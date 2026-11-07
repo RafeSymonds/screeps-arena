@@ -29,6 +29,8 @@ const REJOIN_RANGE = 7;
 const UNBLOCK_SAFE = 8;
 /** Enemies this close to an owned flag are a raid worth meeting. */
 const RAID_RANGE = 7;
+/** Escorting a capture, everyone but the capturer stays this far from the flag. */
+const ESCORT_STANDOFF = 3;
 /** How far the leader lets the group spread before it waits. */
 const GROUP_RADIUS = 5;
 /**
@@ -45,6 +47,10 @@ export interface Orders {
   range: number;
 }
 
+/** Mass attack once the summed falloff of enemies in range reaches this (one adjacent = 1). */
+const MASS_THRESHOLD = 1.8;
+/** How far a ranged creep will walk to get next to an enemy crowd. */
+const CROWD_REACH = 4;
 /** RANGED_ATTACK_DISTANCE_RATE from docs/api/Constants.md, as the mass attack falloff. */
 const MASS_RATE = [1, 1, 0.4, 0.1];
 
@@ -149,6 +155,14 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
     (getRange(anchor, focus) <= CONTACT_RANGE ||
       army.some(c => !disarmed(c) && armed.some(e => getRange(c, e) <= 3)));
 
+  const capturer =
+    o.mode === 'escort' && o.target
+      ? closest(
+          o.target,
+          army.filter(c => !disarmed(c)),
+        )
+      : undefined;
+
   for (const c of army) {
     if (o.mode === 'cleanup') continue;
 
@@ -186,6 +200,15 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
     }
 
     if (!o.target) continue;
+    // Taking a flag: whoever is nearest steps onto it, and everyone else keeps
+    // three tiles off. Sending the anchor from the middle of the army, with
+    // the rest closing to two tiles, ringed the flag with our own creeps and
+    // left the army standing beside it for 800 ticks of a real game.
+    if (o.mode === 'escort') {
+      if (c === capturer) travelTo(c, o.target, matrix, 0);
+      else travelTo(c, o.target, matrix, ESCORT_STANDOFF);
+      continue;
+    }
     if (c === anchor) {
       // Hold the march until stragglers close up, so the army arrives together.
       if (spread > GROUP_RADIUS + 2 && getRange(c, o.target) > o.range) continue;
@@ -196,6 +219,24 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       travelTo(c, o.target, matrix, Math.max(o.range, 2));
     }
   }
+}
+
+/**
+ * The enemy within `reach` of `from` with at least two other enemies next to
+ * it and the most such neighbours, or undefined if no enemy has two.
+ */
+function densest(enemies: readonly Creep[], from: Creep, reach: number): Creep | undefined {
+  let best: Creep | undefined;
+  let most = 2;
+  for (const e of enemies) {
+    if (getRange(from, e) > reach) continue;
+    const n = enemies.filter(o => o !== e && getRange(o, e) <= 1).length;
+    if (n >= most) {
+      most = n;
+      best = e;
+    }
+  }
+  return best;
 }
 
 /** The friend within `range` that most needs healing (see healNeed). */
@@ -250,7 +291,16 @@ function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatri
   }
 
   if (hasRanged) {
-    if (getRange(c, foe) > 3) travelTo(c, foe, matrix, 3);
+    // Close to a tile of the thickest enemy crowd in reach, where a mass attack
+    // hits all of it at full strength, but only a crowd with no armed melee in
+    // it: walking our ranged up to one cost us two of them to temik911's melee.
+    const crowd = densest(
+      s.enemyCreeps.filter(e => !melee.some(m => getRange(m, e) <= 2)),
+      c,
+      CROWD_REACH,
+    );
+    if (crowd) travelTo(c, crowd, matrix, 1);
+    else if (getRange(c, foe) > 3) travelTo(c, foe, matrix, 3);
     return;
   }
 
@@ -296,10 +346,11 @@ function act(c: Creep, s: State): void {
   if (ranged > 0) {
     const inRange = s.enemyCreeps.filter(e => getRange(c, e) <= 3);
     if (inRange.length > 0) {
-      // A mass attack spreads damage thin, and spreading is the opposite of
-      // disarming anyone. Only worth it against a crowd at close range.
+      // A mass attack hits every enemy in range, full strength at one tile.
+      // Two enemies adjacent already doubles a single shot, and temik911 beat
+      // us by pushing its ranged into our ranks and doing exactly that.
       const mass = inRange.reduce((sum, e) => sum + MASS_RATE[getRange(c, e)]!, 0);
-      if (mass >= 2.5) c.rangedMassAttack();
+      if (mass >= MASS_THRESHOLD) c.rangedMassAttack();
       else c.rangedAttack(focusTarget(c, inRange, 3, ranged)!);
       shot = true;
     }
