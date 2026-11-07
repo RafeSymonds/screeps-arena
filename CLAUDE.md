@@ -18,6 +18,8 @@ Everything goes through `bin/arena` — don't call rollup/tsc directly.
 | `bin/arena sim [options]`                        | play the built bundle against scripted opponents offline    |
 | `bin/arena fetch [ids]`                          | archive real matches from the arena API (needs client open) |
 | `bin/arena test [--arena a] [--repeat n]`        | real unrated test matches vs saved opponents (client open)  |
+| `bin/arena play [n]`                             | n real RATED games through matchmaking (client open)        |
+| `bin/arena client [status\|launch\|link]`        | check the client bridge; point script folders at `game/`    |
 | `bin/arena games` / `review <id>`                | list and inspect archived or cached matches                 |
 | `bin/arena new <arena-name>`                     | scaffold `src/arenas/<arena-name>/main.ts`                  |
 | `bin/arena sync`                                 | refresh vendored typings and docs from the installed client |
@@ -28,6 +30,8 @@ written from these docs — good at catching runtime faults and incoherent
 behaviour, useless for discovering that a rule was misread, because the model and
 the bot share the same misconceptions. The opponents are scripts, and the
 fixture holds one sample of terrain that the real arena regenerates every match.
+
+**How to test and analyse the bot end to end is in `docs/testing.md`.**
 
 Behaviour against a real opponent is only verified by a real match. `bin/arena
 test` plays one on the real server in unrated test mode, but needs the client
@@ -44,6 +48,7 @@ src/arenas/<name>/main.ts one bot per arena; must export loop()
 typings/game/, arena/     GENERATED — vendored from the client, never hand-edit
 typings/sandbox.d.ts      HAND-WRITTEN — sandbox globals the client's typings omit
 docs/api/                 GENERATED — markdown API reference, never hand-edit
+docs/testing.md           HAND-WRITTEN — the test and analysis workflow
 dist/                     GENERATED — build output (gitignored)
 game/<name>/              what the client reads; contents gitignored
 tools/                    the generators behind `bin/arena sync`

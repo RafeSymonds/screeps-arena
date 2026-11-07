@@ -136,6 +136,7 @@ client_node() { node --experimental-websocket --no-warnings "$@"; }
 cmd_client() {
   case "${1:-status}" in
     launch) open "steam://rungameid/1137320"; echo "launched via Steam — the debug port needs the launch option set (tools/client/README.md)" ;;
+    link)   shift; client_node "$ROOT/tools/client/link.mjs" "$GAME_DIR" "$@" ;;
     status) client_node --input-type=module -e "
       import { connect } from '$ROOT/tools/client/cdp.mjs';
       const c = await connect();
@@ -143,7 +144,7 @@ cmd_client() {
         const { season } = await c.api('/season/current');
         console.log('client connected, API reachable — current season: ' + (season?.name ?? season?._id ?? '?'));
       } finally { c.close(); }" ;;
-    *) die "usage: bin/arena client [status|launch]" ;;
+    *) die "usage: bin/arena client [status|launch|link [arena-folder...]]" ;;
   esac
 }
 cmd_fetch() { client_node "$ROOT/tools/client/fetch.mjs" "$@"; }
@@ -240,6 +241,7 @@ build
   check             typecheck without emitting
   sim [options]     play the built bundle against scripted opponents (see below)
   client [status|launch]  check (or start) the game client's debug connection
+  client link [arenas]    point the client's script folders at <repo>/game/<arena>
   fetch [ids] [--force]   archive recent matches from the arena API into matches/
   test [--arena a] [--repeat n] [--opponent name] [--list]
                     build, then play real unrated test matches vs saved opponents

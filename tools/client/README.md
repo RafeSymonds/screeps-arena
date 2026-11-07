@@ -1,8 +1,8 @@
 # Client bridge
 
 Scripts that talk to the arena server (`https://arena.screeps.com/api`) as the
-signed-in game client, so match data can be pulled without anyone clicking
-through replays.
+signed-in game client: archiving games, and starting test and rated games. The
+workflow is in `docs/testing.md`; this file covers how the bridge works.
 
 ```sh
 bin/arena client            # is the client reachable, and is the API answering?
@@ -15,7 +15,14 @@ bin/arena test              # real unrated matches vs saved opponents (season4-p
 bin/arena test --arena season3-spawn_strike --repeat 3 --opponent System
 bin/arena test --list       # just show the opponents
 bin/arena play 3            # three RATED games through matchmaking (moves rating)
+bin/arena client link       # point the client's script folders at <repo>/game/<arena>
 ```
+
+`client link` writes the client's own per-arena setting
+(`localStorage["arena_local_settings_<arenaId>_running_game"].sourceFolder`)
+and calls its `ipc-arena::sync-folder` handler, which copies the arena's
+typings into the folder and drops a template `main.mjs` there if none exists.
+Run `bin/arena build` afterwards to replace the template with the real bundle.
 
 ## Test mode
 
