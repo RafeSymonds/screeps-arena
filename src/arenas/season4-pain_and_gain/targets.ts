@@ -129,19 +129,13 @@ export function healTarget(
   friends: readonly Creep[],
   range: number,
   heal: number,
-  incoming: (f: Creep) => number = () => 0,
 ): Creep | undefined {
   let best: Creep | undefined;
   let bestScore = 0;
   for (const f of friends) {
     if (getRange(from, f) > range) continue;
-    // Damage and healing in one tick net out, so a heal on a creep that is
-    // about to be hit is as good as one after, and keeps its weapon parts up
-    // through the hit. Most strong players spend over half their heals on
-    // creeps at full health; we healed only what was already hurt.
-    const due = incoming(f);
-    if (f.hitsMax - f.hits + due - (mending.get(f) ?? 0) <= 0) continue;
-    const score = healNeed(f) + due;
+    if (f.hitsMax - f.hits - (mending.get(f) ?? 0) <= 0) continue;
+    const score = healNeed(f);
     if (score > bestScore) {
       bestScore = score;
       best = f;
