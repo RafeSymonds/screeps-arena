@@ -7,7 +7,17 @@ position, so a change can be exercised before anyone opens the game.
 bin/arena sim                                   # every opponent, both sides
 bin/arena sim --opponent rusher --side 2        # one match
 bin/arena sim --opponent blob --side 1 --trace  # positions and flag captures
+bin/arena sim --jobs 1                          # serial sweep
 ```
+
+A full sweep runs one match per core (`--jobs`, default all cores). The cpu
+columns are wall-clock per tick, so they read high under parallel load; use
+`--jobs 1` when the CPU numbers matter.
+
+None of this needs the Steam client: a fresh checkout runs `bin/arena check`,
+`build` and `sim` after `npm install`. Only `deploy`, `sync`, the replay tools
+and ghost opponents need the client or its cache (`ARENA_CACHE_DIR` points the
+latter two at a copied cache).
 
 It builds first, so it always runs the current source, and exits non-zero if any
 match is not won — usable as a gate on a change.

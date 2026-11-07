@@ -5,10 +5,13 @@
 //   node tools/sim/run.mjs                          full matrix, both sides
 //   node tools/sim/run.mjs --opponent rusher        one match
 //   node tools/sim/run.mjs --opponent blob --side 2 --trace
+//   node tools/sim/run.mjs --jobs 1                 serial, for comparable cpu numbers
 import { register } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { availableParallelism } from 'node:os';
 
 import { buildWorld, buildWorldFromFrame, beginTick, endTick, P, state } from './engine.mjs';
 import { STYLES, create } from './opponents.mjs';
@@ -137,34 +140,88 @@ const styles = has('opponent') ? [flag('opponent')] : Object.keys(STYLES);
 const sides = styles[0]?.startsWith('ghost:') ? [1] : has('side') ? [Number(flag('side'))] : [1, 2];
 const single = styles.length === 1 && sides.length === 1;
 
+const ROW = has('row');
+const JOBS = Number(flag('jobs', availableParallelism()));
+
+/** Play one match in this process and print its row. Returns true if won. */
+async function playAndReport(opponentStyle, side) {
+  const outcome = await play({ opponentStyle, side, trace: TRACE && single });
+  if (outcome.crash) {
+    console.log(`${opponentStyle} as player${side}: CRASHED on tick ${outcome.crash.tick}`);
+    console.log(outcome.crash.error);
+    return false;
+  }
+  const verdict = { win: 'win ', loss: 'LOSS', draw: 'DRAW' }[outcome.result];
+  console.log(
+    `${opponentStyle.padEnd(7)} ${outcome.side.padEnd(7)}  ${verdict}  t${String(outcome.tick).padStart(4)}  ` +
+      `spawn ${String(outcome.mySpawn).padStart(4)}/${String(outcome.foeSpawn).padEnd(4)}  ` +
+      `flags ${outcome.flags}/2  ramparts ${String(outcome.ramparts).padStart(3)}  ` +
+      `foe ext ${String(outcome.foeExtensions).padStart(2)}  creeps ${outcome.creeps}  ` +
+      `cpu p95 ${outcome.p95Ms.toFixed(2)}ms max ${outcome.maxMs.toFixed(2)}ms  ` +
+      `paths/tick ${outcome.searches.toFixed(2)}`,
+  );
+  return outcome.result === 'win';
+}
+
+/**
+ * Play one match in a child process. Each match is independent, so a sweep
+ * spreads across cores. The cpu columns are wall-clock per tick, so they read
+ * higher under load than a serial run; use --jobs 1 when measuring CPU.
+ */
+function playInChild(opponentStyle, side) {
+  const args = [
+    ...process.execArgv,
+    process.argv[1],
+    '--row',
+    '--opponent', opponentStyle,
+    '--side', String(side),
+    '--arena', ARENA,
+    '--fixture', FIXTURE,
+    '--ticks', String(TICKS),
+  ];
+  return new Promise(resolve => {
+    execFile(process.execPath, args, { maxBuffer: 64 << 20 }, (error, stdout, stderr) => {
+      resolve({ won: !error, text: (stdout + stderr).trimEnd() });
+    });
+  });
+}
+
+if (ROW) process.exit((await playAndReport(styles[0], sides[0])) ? 0 : 1);
+
 console.log(`arena ${ARENA} · fixture ${FIXTURE} · ${TICKS} ticks\n`);
+const matches = styles.flatMap(opponentStyle => sides.map(side => ({ opponentStyle, side })));
 let failures = 0;
 
-for (const opponentStyle of styles) {
-  for (const side of sides) {
-    const outcome = await play({ opponentStyle, side, trace: TRACE && single });
-    if (outcome.crash) {
-      failures += 1;
-      console.log(`${opponentStyle} as player${side}: CRASHED on tick ${outcome.crash.tick}`);
-      console.log(outcome.crash.error);
-      continue;
-    }
-    if (outcome.result !== 'win') failures += 1;
-    const verdict = { win: 'win ', loss: 'LOSS', draw: 'DRAW' }[outcome.result];
-    console.log(
-      `${opponentStyle.padEnd(7)} ${outcome.side.padEnd(7)}  ${verdict}  t${String(outcome.tick).padStart(4)}  ` +
-        `spawn ${String(outcome.mySpawn).padStart(4)}/${String(outcome.foeSpawn).padEnd(4)}  ` +
-        `flags ${outcome.flags}/2  ramparts ${String(outcome.ramparts).padStart(3)}  ` +
-        `foe ext ${String(outcome.foeExtensions).padStart(2)}  creeps ${outcome.creeps}  ` +
-        `cpu p95 ${outcome.p95Ms.toFixed(2)}ms max ${outcome.maxMs.toFixed(2)}ms  ` +
-        `paths/tick ${outcome.searches.toFixed(2)}`,
-    );
+if (single || JOBS <= 1) {
+  for (const { opponentStyle, side } of matches) {
+    if (!(await playAndReport(opponentStyle, side))) failures += 1;
   }
+} else {
+  // Print in matrix order as results arrive, so the table reads the same as a serial run.
+  const pending = matches.map(m => () => playInChild(m.opponentStyle, m.side));
+  const results = new Array(matches.length);
+  let next = 0;
+  let printed = 0;
+  const flush = () => {
+    while (printed < results.length && results[printed]) {
+      const { won, text } = results[printed++];
+      if (!won) failures += 1;
+      console.log(text);
+    }
+  };
+  const worker = async () => {
+    while (next < pending.length) {
+      const at = next++;
+      results[at] = await pending[at]();
+      flush();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(JOBS, pending.length) }, worker));
 }
 
 console.log(
   failures === 0
     ? '\nall matches won'
-    : `\n${failures} of ${styles.length * sides.length} matches not won`,
+    : `\n${failures} of ${matches.length} matches not won`,
 );
 process.exit(failures === 0 ? 0 : 1);
