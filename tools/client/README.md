@@ -1,8 +1,8 @@
 # Client bridge
 
 Scripts that talk to the arena server (`https://arena.screeps.com/api`) as the
-signed-in game client, so match data can be pulled without anyone clicking
-through replays.
+signed-in game client: archiving games, and starting test and rated games. The
+workflow is in `docs/testing.md`; this file covers how the bridge works.
 
 ```sh
 bin/arena client            # is the client reachable, and is the API answering?
@@ -14,7 +14,15 @@ bin/arena review latest
 bin/arena test              # real unrated matches vs saved opponents (season4-pain_and_gain)
 bin/arena test --arena season3-spawn_strike --repeat 3 --opponent System
 bin/arena test --list       # just show the opponents
+bin/arena play 3            # three RATED games through matchmaking (moves rating)
+bin/arena client link       # point the client's script folders at <repo>/game/<arena>
 ```
+
+`client link` writes the client's own per-arena setting
+(`localStorage["arena_local_settings_<arenaId>_running_game"].sourceFolder`)
+and calls its `ipc-arena::sync-folder` handler, which copies the arena's
+typings into the folder and drops a template `main.mjs` there if none exists.
+Run `bin/arena build` afterwards to replace the template with the real bundle.
 
 ## Test mode
 
@@ -29,6 +37,10 @@ arena's built-in bot), `recent` (opponents from your recent rated games) and
 `favorites` (saved permanently with Test Tokens). A fresh arena has only the
 System bot, which in Pain and Gain sits still, so a win against it proves
 little. The list grows as you play rated games.
+
+`play` posts to `/game/start` instead, the client's normal ranked button. It
+moves the account's rating, and each opponent met becomes a `recent` test
+opponent, which is the cheap way to grow the test suite.
 
 Games run one at a time and take a few minutes each; the first Pain and Gain
 test took about four.
