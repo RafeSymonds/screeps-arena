@@ -7,9 +7,7 @@ import { getRange } from 'game/utils';
  * Every body in this arena lists its weapons first, and damage eats parts front
  * to back. So a creep is disarmed long before it dies: a melee creep stops
  * hitting after 800 of its 1600 hits, a ranged creep or healer after 600 of
- * 1200. Damage is spent best on whoever loses the most output per point of
- * damage, and once a target has enough damage coming to disarm it this tick,
- * the next shooter picks someone else.
+ * 1200.
  */
 
 const WEAPONS = new Set<string>([ATTACK, RANGED_ATTACK, HEAL]);
@@ -20,13 +18,6 @@ const WEAPONS = new Set<string>([ATTACK, RANGED_ATTACK, HEAL]);
  * back on disarmed creeps; that is worth more than its raw 12 hits a tick.
  */
 const HEAL_PART_VALUE = 25;
-
-/** Hits left on the parts that let a creep fight or heal. */
-export function weaponHits(c: Creep): number {
-  let n = 0;
-  for (const p of c.body) if (WEAPONS.has(p.type)) n += p.hits;
-  return n;
-}
 
 /** Damage-equivalent output per tick, from live parts only. */
 export function outputOf(c: Creep): number {
@@ -54,16 +45,41 @@ export function disarmed(c: Creep): boolean {
 const planned = new Map<Creep, number>();
 /** Healing already committed to each friend this tick. */
 const mending = new Map<Creep, number>();
+/** Damage our whole army could put on each enemy this tick, from where it stands. */
+const reach = new Map<Creep, number>();
 
-export function newTick(): void {
+/**
+ * Damage committed past a target's hits before the next shooter moves on.
+ * Enemy healers land in the same tick, so a little overkill is insurance.
+ */
+const OVERKILL = 150;
+
+export function newTick(army: readonly Creep[], enemies: readonly Creep[]): void {
   planned.clear();
   mending.clear();
+  reach.clear();
+  for (const e of enemies) {
+    let total = 0;
+    for (const c of army) {
+      const d = getRange(c, e);
+      for (const p of c.body) {
+        if (p.hits <= 0) continue;
+        if (p.type === ATTACK && d <= 1) total += ATTACK_POWER;
+        else if (p.type === RANGED_ATTACK && d <= 3) total += RANGED_ATTACK_POWER;
+      }
+    }
+    reach.set(e, total);
+  }
 }
 
 /**
- * The enemy within `range` that loses the most output per point of damage,
- * skipping any that are already going to be disarmed this tick unless nothing
- * else is in reach. Records `damage` against the choice.
+ * Where this creep's damage goes. The whole army converges on one enemy: the
+ * one whose output we can delete fastest, given how much of our army can
+ * reach it this tick. Spreading damage to disarm several creeps at once lost
+ * real games: enemy healers undid it, while the opponent that put all nine
+ * of its weapons on one creep a tick killed one of ours every few ticks.
+ * Records `damage` against the choice, and moves on once a target has enough
+ * coming to die. Always returns a target when any enemy is in range.
  */
 export function focusTarget(
   from: Creep,
@@ -75,15 +91,12 @@ export function focusTarget(
   let bestScore = -Infinity;
   for (const e of enemies) {
     if (getRange(from, e) > range) continue;
-    const already = planned.get(e) ?? 0;
-    const toDisarm = weaponHits(e) - already;
-    const toKill = e.hits - already;
-    let score: number;
-    if (toKill <= damage)
-      score = 1000 + outputOf(e); // a kill this tick
-    else if (toDisarm > 0) score = outputOf(e) / toDisarm;
-    // Disarmed or about to be: still worth finishing, after everything else.
-    else score = -toKill / 10000;
+    const left = e.hits - (planned.get(e) ?? 0);
+    // Fraction of the target our army can remove this tick, times what it is
+    // worth. Unarmed creeps still count a little, so stragglers get finished.
+    const share = Math.min(1, (reach.get(e) ?? damage) / Math.max(1, left));
+    // Already dead with margin to spare: only if nothing else is in reach.
+    const score = left < -OVERKILL ? -1 : (outputOf(e) + 10) * share;
     if (score > bestScore) {
       bestScore = score;
       best = e;

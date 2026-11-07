@@ -112,7 +112,7 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       .map(c => getRange(c, anchor)),
   );
 
-  newTick();
+  newTick(army, enemies);
   // Melee first: it has the fewest choices, so ranged fire fills in around it.
   const order = army
     .slice()
