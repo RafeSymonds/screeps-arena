@@ -123,6 +123,22 @@ What the arena actually contains, confirmed from a real match:
 `recon.ts` still prints a full inventory on tick 1; read the client console after
 a match rather than trusting the above if anything looks off.
 
+`season4-pain_and_gain` — score more than the opponent by tick 2000, or wipe out
+their army. From the server's arena description (client cache), not yet from a
+real match:
+
+- 14 pre-set creeps a side. No spawning, energy, construction or replacements.
+- Seven neutral `ScoreFlag`s (`arena/season_4/pain_and_gain/basic`), captured by
+  standing on one. Each scores `scorePerTick` for its owner and debuffs the
+  owner's whole army: vulnerability ×1 (5/tick, damage taken ×1.1), heal ×2
+  (4/tick, ×0.75 then ×0.5), attack ×2 and ranged ×2 (3/tick, ×0.8 then ×0.6).
+  Same-type flags combine by table, not by multiplying.
+- The match ends early when an army is gone or a lead can no longer be caught.
+- The sandbox exposes no score; the bot counts it from flag ownership.
+- Creep bodies, flag types per position, and whether terrain is fixed are not
+  known yet. `recon.ts` prints all three on tick 1.
+- The offline simulator does not model this arena.
+
 ## Recovering arena facts
 
 The arena's contents are generated server-side and are not in the client bundle,

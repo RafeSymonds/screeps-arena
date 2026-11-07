@@ -21,10 +21,16 @@ Import from `game/constants`.
 | `DISMANTLE_COST`                     | `0.005`                        |
 | `DISMANTLE_POWER`                    | `50`                           |
 | `EFF_ATTACK_BOOST`                   | `eff_attack_boost`             |
+| `EFF_ATTACK_MODIFIER`                | `eff_attack_modifier`          |
 | `EFF_CONSTRUCTION_BOOST`             | `eff_construction_boost`       |
+| `EFF_DAMAGE_TAKEN_MODIFIER`          | `eff_damage_taken_modifier`    |
+| `EFF_FATIGUE_MODIFIER`               | `eff_fatigue_modifier`         |
 | `EFF_HEAL_BOOST`                     | `eff_heal_boost`               |
+| `EFF_HEAL_MODIFIER`                  | `eff_heal_modifier`            |
+| `EFF_HITS_LOSS`                      | `eff_hits_loss`                |
 | `EFF_MOVE_BOOST`                     | `eff_move_boost`               |
 | `EFF_RANGED_ATTACK_BOOST`            | `eff_ranged_attack_boost`      |
+| `EFF_RANGED_ATTACK_MODIFIER`         | `eff_ranged_attack_modifier`   |
 | `EFF_WORK_BOOST`                     | `eff_work_boost`               |
 | `ERR_BUSY`                           | `-4`                           |
 | `ERR_FULL`                           | `-8`                           |

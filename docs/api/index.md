@@ -8,6 +8,7 @@ Regenerate with `bin/arena sync-docs`. Do not edit these files by hand.
 - [ConstructionSite](ConstructionSite.md)
 - [CostMatrix](CostMatrix.md)
 - [Creep](Creep.md)
+- [Effect](Effect.md)
 - [Flag](Flag.md)
 - [GameObject](GameObject.md)
 - [OwnedStructure](OwnedStructure.md)
@@ -44,13 +45,14 @@ Regenerate with `bin/arena sync-docs`. Do not edit these files by hand.
 - [getTicks](getTicks.md)
 - [searchPath](searchPath.md)
 
-## Power Split
-
-- [BonusFlag](BonusFlag.md)
-
 ## Escort Run
 
 - [EscortCreep](EscortCreep.md)
+
+## Pain and Gain
+
+- [Modifier effects](Modifier_effects.md)
+- [ScoreFlag](ScoreFlag.md)
 
 ## Constants
 

@@ -1,35 +1,27 @@
-declare module 'game/utils' {
-  import { SearchPathOptions } from 'game/path-finder';
-  import { Position, GameObject, Structure, ConstructionSite } from 'game/prototypes';
+declare module "game/utils" {
+  import { SearchPathOptions } from "game/path-finder";
+  import { Position, GameObject, Structure, ConstructionSite } from "game/prototypes";
   import {
-    ERR_INVALID_ARGS,
-    ERR_INVALID_TARGET,
-    ERR_FULL,
-    TOP,
-    TOP_RIGHT,
-    RIGHT,
-    BOTTOM_RIGHT,
-    BOTTOM,
-    BOTTOM_LEFT,
-    LEFT,
-    TOP_LEFT,
-    TERRAIN_PLAIN,
-    TERRAIN_WALL,
-    TERRAIN_SWAMP,
-  } from 'game/constants';
+    ERR_INVALID_ARGS, ERR_INVALID_TARGET, ERR_FULL,
+    TOP, TOP_RIGHT, RIGHT, BOTTOM_RIGHT, BOTTOM, BOTTOM_LEFT, LEFT, TOP_LEFT,
+    TERRAIN_PLAIN, TERRAIN_WALL, TERRAIN_SWAMP
+  } from "game/constants";
 
-  import { searchPath } from 'game/path-finder'; // eslint-disable-line @typescript-eslint/no-unused-vars
+  import { searchPath } from "game/path-finder"; // eslint-disable-line @typescript-eslint/no-unused-vars
 
   export type Direction =
-    | typeof TOP
-    | typeof TOP_RIGHT
-    | typeof RIGHT
-    | typeof BOTTOM_RIGHT
-    | typeof BOTTOM
-    | typeof BOTTOM_LEFT
-    | typeof LEFT
-    | typeof TOP_LEFT;
-  export type Terrain = typeof TERRAIN_WALL | typeof TERRAIN_SWAMP | typeof TERRAIN_PLAIN;
+      typeof TOP |
+      typeof TOP_RIGHT |
+      typeof RIGHT |
+      typeof BOTTOM_RIGHT |
+      typeof BOTTOM |
+      typeof BOTTOM_LEFT |
+      typeof LEFT |
+      typeof TOP_LEFT;
+  export type Terrain =
+      typeof TERRAIN_WALL |
+      typeof TERRAIN_SWAMP |
+      typeof TERRAIN_PLAIN;
 
   export type DoesZapCodeSpaceFlag = 0 | 1;
   export interface HeapInfo {
@@ -64,10 +56,7 @@ declare module 'game/utils' {
    * @param structurePrototype A prototype that extends {@link GameObject}
    * @returns a {@link CreateConstructionSiteResult} object with the call result
    */
-  export function createConstructionSite<T extends Structure>(
-    pos: Position,
-    structurePrototype: { new (): T },
-  ): CreateConstructionSiteResult;
+  export function createConstructionSite<T extends Structure>(pos: Position, structurePrototype: { new(): T }): CreateConstructionSiteResult;
 
   /**
    * Find a position with the shortest path from the given position
@@ -84,11 +73,7 @@ declare module 'game/utils' {
    * @param options.ignore objects which should not be treated as obstacles during the search
    * @returns the closest object from {@link positions}, or null if there was no valid positions
    */
-  export function findClosestByPath<T extends Position>(
-    fromPos: Position,
-    positions: T[],
-    options?: FindPathOptions,
-  ): T;
+  export function findClosestByPath<T extends Position>(fromPos: Position, positions: T[], options?: FindPathOptions): T;
 
   /**
    * Find a position with the shortest linear distance from the given position
@@ -105,11 +90,7 @@ declare module 'game/utils' {
    * @param range The range distance
    * @returns an array with the objects found
    */
-  export function findInRange<T extends Position>(
-    fromPos: Position,
-    positions: T[],
-    range: number,
-  ): T[];
+  export function findInRange<T extends Position>(fromPos: Position, positions: T[], range: number): T[];
 
   /**
    * Find an optimal path between fromPos and toPos.
@@ -127,11 +108,7 @@ declare module 'game/utils' {
    * @param options.ignore objects which should not be treated as obstacles during the search
    * @returns the path found as an array of objects containing x and y properties
    */
-  export function findPath(
-    fromPos: Position,
-    toPos: Position,
-    options?: FindPathOptions,
-  ): Position[];
+  export function findPath(fromPos: Position, toPos: Position, options?: FindPathOptions): Position[];
 
   /**
    * @returns CPU wall time elapsed in the current tick in nanoseconds
@@ -167,7 +144,7 @@ declare module 'game/utils' {
    * @param prototype A prototype that extends {@link GameObject}
    * @returns Array of objects with the specified prototype
    */
-  export function getObjectsByPrototype<T extends GameObject>(prototype: { new (): T }): T[];
+  export function getObjectsByPrototype<T extends GameObject>(prototype: { new(): T }): T[];
 
   /**
    * Get linear range between two objects. a and b may be {@link GameObject} or any object containing x and y properties

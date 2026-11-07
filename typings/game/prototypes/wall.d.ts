@@ -1,6 +1,8 @@
-declare module 'game/prototypes/wall' {
-  import { Structure } from 'game/prototypes/structure';
+declare module "game/prototypes/wall" {
 
-  /** Blocks movement of all creeps */
-  export class StructureWall extends Structure {}
+    import { Structure } from "game/prototypes/structure";
+
+    /** Blocks movement of all creeps */
+    export class StructureWall extends Structure {
+    }
 }
