@@ -127,7 +127,13 @@ export interface FlagPlan {
 export function planFlags(s: State, total: number): FlagPlan {
   const owned = s.flags.filter(f => f.my === true);
   const theirs = s.flags.filter(f => f.my === false);
-  const open = s.flags.filter(f => f.my !== true);
+  // A creep standing on a flag blocks anyone else from stepping onto it, and
+  // both sides park scouts on the flags they hold. Counting such a flag as
+  // takeable sent our scouts to stand next to it for the rest of the match
+  // while the plan believed it was winning.
+  const open = s.flags.filter(
+    f => f.my !== true && !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
+  );
 
   const minRatio = s.remaining < total * LATE_FRACTION ? LATE_MIN_RATIO : MIN_RATIO;
   // Assume the enemy can still pick up roughly one more mid-value flag for

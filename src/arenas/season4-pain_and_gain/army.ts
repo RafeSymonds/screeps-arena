@@ -25,6 +25,8 @@ const CONTACT_RANGE = 8;
 /** In a fight, members further than this from the centre close up before engaging. */
 const REJOIN_RANGE = 7;
 
+/** A flag-sitting scout is fair game only with no armed enemy this close to it. */
+const UNBLOCK_SAFE = 8;
 /** Enemies this close to an owned flag are a raid worth meeting. */
 const RAID_RANGE = 7;
 /** How far the leader lets the group spread before it waits. */
@@ -35,7 +37,7 @@ const GROUP_RADIUS = 5;
  */
 const STRAGGLER_RANGE = 15;
 
-export type Mode = 'hunt' | 'escort' | 'defend' | 'guard' | 'evade' | 'cleanup';
+export type Mode = 'hunt' | 'escort' | 'defend' | 'unblock' | 'guard' | 'evade' | 'cleanup';
 
 export interface Orders {
   mode: Mode;
@@ -81,6 +83,23 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
 
   const raid = enemies.find(e => owned.some(f => getRange(e, f) <= RAID_RANGE));
   if (raid) return { mode: 'defend', target: raid, range: 1 };
+
+  // Losing on the clock with every flag spoken for: the enemy's flags are
+  // usually held by a 100-hit scout standing on them. Kill one that has no
+  // armed escort nearby, and the flag is ours to take. Found by playing an
+  // earlier build, which parked its scouts and won on score while we stood
+  // next to its flags.
+  const projected = s.myScore + s.myRate * s.remaining - (s.enemyScore + s.enemyRate * s.remaining);
+  if (here && projected < 0) {
+    const sitters = s.enemyCreeps.filter(
+      e =>
+        !isArmed(e) &&
+        s.flags.some(f => f.my === false && f.x === e.x && f.y === e.y) &&
+        !enemies.some(a => getRange(a, e) <= UNBLOCK_SAFE),
+    );
+    const sitter = closest(here, sitters);
+    if (sitter) return { mode: 'unblock', target: sitter, range: 1 };
+  }
 
   const pending = s.flags.filter(f => f.my !== true && plan.wanted.has(String(f.id)));
   if (pending.length > 0 && runnersAlive === 0 && here) {
