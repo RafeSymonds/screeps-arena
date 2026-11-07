@@ -107,23 +107,6 @@ export function focusTarget(
 }
 
 /**
- * Damage the enemy can land on `f` next tick: melee within 2 (a step and a
- * swing), ranged within 4 (a step and a shot).
- */
-export function incoming(f: Creep, enemies: readonly Creep[]): number {
-  let n = 0;
-  for (const e of enemies) {
-    const d = getRange(f, e);
-    for (const p of e.body) {
-      if (p.hits <= 0) continue;
-      if (p.type === ATTACK && d <= 2) n += ATTACK_POWER;
-      else if (p.type === RANGED_ATTACK && d <= 4) n += RANGED_ATTACK_POWER;
-    }
-  }
-  return n;
-}
-
-/**
  * How much a friend needs healing. Missing hits on weapon parts count double:
  * each part restored is output back.
  */
@@ -146,19 +129,13 @@ export function healTarget(
   friends: readonly Creep[],
   range: number,
   heal: number,
-  enemies: readonly Creep[],
 ): Creep | undefined {
   let best: Creep | undefined;
   let bestScore = 0;
   for (const f of friends) {
     if (getRange(from, f) > range) continue;
-    // Damage and healing in one tick net out, so a heal on a creep about to
-    // be hit is worth as much as one after, and keeps its weapon parts up
-    // through the hit. The strongest players spend more than half their heals
-    // on creeps at full health; we healed only what was already hurt.
-    const due = incoming(f, enemies);
-    if (f.hitsMax - f.hits + due - (mending.get(f) ?? 0) <= 0) continue;
-    const score = healNeed(f) + due;
+    if (f.hitsMax - f.hits - (mending.get(f) ?? 0) <= 0) continue;
+    const score = healNeed(f);
     if (score > bestScore) {
       bestScore = score;
       best = f;
