@@ -18,8 +18,12 @@ import { isRunner } from './state';
 import { centroid } from './terrain';
 import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets';
 
-/** Stronger than the enemy by this much, go and end the match by wiping them. */
-const HUNT_RATIO = 1.25;
+/**
+ * Stronger than the enemy by this much, go and end the match by wiping them.
+ * Set high: attacking an army that holds its ground loses even from ahead, and
+ * at 1.25 we left the centre to hunt temik911 and lost the fight.
+ */
+const HUNT_RATIO = 1.6;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
 const EVADE_RATIO = 0.7;
 /**
