@@ -17,6 +17,7 @@ Everything goes through `bin/arena` — don't call rollup/tsc directly.
 | `bin/arena check`                                | `tsc --noEmit`                                              |
 | `bin/arena sim [options]`                        | play the built bundle against scripted opponents offline    |
 | `bin/arena fetch [ids]`                          | archive real matches from the arena API (needs client open) |
+| `bin/arena test [--arena a] [--repeat n]`        | real unrated test matches vs saved opponents (client open)  |
 | `bin/arena games` / `review <id>`                | list and inspect archived or cached matches                 |
 | `bin/arena new <arena-name>`                     | scaffold `src/arenas/<arena-name>/main.ts`                  |
 | `bin/arena sync`                                 | refresh vendored typings and docs from the installed client |
@@ -28,8 +29,10 @@ behaviour, useless for discovering that a rule was misread, because the model an
 the bot share the same misconceptions. The opponents are scripts, and the
 fixture holds one sample of terrain that the real arena regenerates every match.
 
-Behaviour against a real opponent is only verified by running a match in the
-client, which a human has to do. Never claim a bot change "works" on the strength
+Behaviour against a real opponent is only verified by a real match. `bin/arena
+test` plays one on the real server in unrated test mode, but needs the client
+running on this machine with its debug port (see `tools/client/README.md`), and
+the opponents are limited to what the account has saved. Never claim a bot change "works" on the strength
 of a green build or a clean sim sweep — say what was checked and that gameplay is
 unverified. See `tools/sim/README.md`.
 

@@ -92,6 +92,8 @@ export async function connect({ port = PORT } = {}) {
 
   /**
    * Call the arena API as the signed-in client. `path` is relative to /api.
+   * `form` sends multipart form data, the way the client starts games:
+   * string values as fields, `{ base64, type, name }` values as files.
    * Returns parsed JSON, or throws with the status and body on failure.
    */
   // A 100-tick replay chunk of a full Spawn Strike match is ~6 MB, and a value
@@ -100,13 +102,19 @@ export async function connect({ port = PORT } = {}) {
   const SLICE = 512 * 1024;
   let requestNo = 0;
 
-  async function api(path, { method = 'GET', body } = {}) {
+  async function api(path, { method = 'GET', body, form } = {}) {
     const key = `__arenaBridge${requestNo++}`;
-    const request = JSON.stringify({ url: `${API}${path}`, method, body });
+    const request = JSON.stringify({ url: `${API}${path}`, method, body, form });
     const head = await evaluate(`(async () => {
       const r = ${request};
       const init = { method: r.method, credentials: 'include', headers: {} };
-      if (r.body !== undefined) {
+      if (r.form) {
+        init.body = new FormData();
+        for (const [k, v] of Object.entries(r.form)) {
+          if (typeof v === 'string') init.body.append(k, v);
+          else init.body.append(k, new Blob([Uint8Array.from(atob(v.base64), c => c.charCodeAt(0))], { type: v.type }), v.name);
+        }
+      } else if (r.body !== undefined) {
         init.headers['Content-Type'] = 'application/json';
         init.body = JSON.stringify(r.body);
       }

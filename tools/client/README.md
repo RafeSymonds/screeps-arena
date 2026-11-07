@@ -11,7 +11,27 @@ bin/arena fetch --arena spawn_strike
 bin/arena fetch <game-id>   # one game
 bin/arena games             # list everything archived or cached
 bin/arena review latest
+bin/arena test              # real unrated matches vs saved opponents (season4-pain_and_gain)
+bin/arena test --arena season3-spawn_strike --repeat 3 --opponent System
+bin/arena test --list       # just show the opponents
 ```
+
+## Test mode
+
+`test` builds the bundle, zips `dist/<arena>/main.mjs` the way the client zips
+its script folder, and posts it to `/test/start` once per opponent per repeat.
+Test games are played by the real server and do not touch rating. Each one is
+polled until finished (pending, running, finished), archived to `matches/` with
+a `test` field naming the opponent, and summarised at the end.
+
+Opponents come from `/test/codes/<arenaId>` in three lists: `system` (the
+arena's built-in bot), `recent` (opponents from your recent rated games) and
+`favorites` (saved permanently with Test Tokens). A fresh arena has only the
+System bot, which in Pain and Gain sits still, so a win against it proves
+little. The list grows as you play rated games.
+
+Games run one at a time and take a few minutes each; the first Pain and Gain
+test took about four.
 
 ## How it works
 
