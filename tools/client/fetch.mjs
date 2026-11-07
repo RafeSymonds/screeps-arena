@@ -30,7 +30,6 @@ const chunkEnds = ticks => {
   if (ticks > 0) ends.push(ticks);
   return ends;
 };
-const chunkStart = end => Math.floor((end - 1) / CHUNK) * CHUNK;
 
 const client = await connect();
 const { api } = client;
@@ -75,14 +74,14 @@ async function archiveGame(id, arenaId) {
     const chunk = await api(`/game/${id}/replay/${end}`);
     if (Array.isArray(chunk)) frames.push(...chunk);
     if (end === 0) continue;
-    // Log chunks are indexed by tick relative to the chunk: entry k is tick
-    // chunkStart + k, matching the client's own SCAReplayLogService.
+    // Log chunks are objects keyed by absolute tick ("101".."200"), with an
+    // empty string for ticks that printed nothing.
     const log = await api(`/game/${id}/log/${end}`).catch(() => null);
     if (!log || typeof log !== 'object') continue;
     for (const [k, text] of Object.entries(log)) {
       if (!text) continue;
       logs.push({
-        tick: chunkStart(end) + Number(k),
+        tick: Number(k),
         text: typeof text === 'string' ? text : JSON.stringify(text),
       });
     }
@@ -108,7 +107,7 @@ try {
   } else {
     for (const arena of await resolveArenas()) {
       const { games } = await api(`/arena/${arena._id}/last-games`);
-      const targets = (games ?? []).map(g => g._id ?? g.game?._id).filter(Boolean);
+      const targets = (games ?? []).map(g => g.game?._id ?? g._id).filter(Boolean);
       console.log(`${arenaLabel(arena)}: ${targets.length} recent games`);
       await archiveAll(targets, arena._id);
     }

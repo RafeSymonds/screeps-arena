@@ -51,16 +51,16 @@ opponents and `extract-fixture` all read archived games without changes.
 
 Replays and logs come in the chunks the client itself requests: tick 0 alone,
 then one chunk per 100 ticks named by its last tick (`/replay/100`,
-`/replay/200`, ... `/replay/<final tick>`). Log chunk entries are indexed
-relative to the chunk start, which `fetch` converts to absolute ticks.
+`/replay/200`, ... `/replay/<final tick>`). Log chunks are objects keyed by
+absolute tick. A 100-tick replay chunk of a full Spawn Strike match is ~6 MB,
+too big to return through one DevTools call, so `cdp.mjs` transfers response
+bodies in 512 KB slices.
 
-## Known unknowns
+## Confirmed against the live client (v1.0.14, 2026-11-07)
 
-Written from the client bundle (v1.0.14) and checked only against a headless
-Chrome page, not the real client:
-
-- whether this Electron build honours `--remote-debugging-port`;
-- the exact shape of `/arena/<id>/last-games` items (`fetch` accepts `_id` or
-  `game._id`) and of log chunks (array or object, both handled).
-
-The first live run settles these.
+- The Electron build honours `--remote-debugging-port`; the main window's URL
+  is `.../app/dist/#/<route>`.
+- `/arena/<id>/last-games` returns `{ games: [...] }`, each item a rating
+  record whose `game._id` is the game id (the item's own `_id` is not).
+  It holds only the last handful of games per arena (5 in Season 3), so fetch
+  regularly if you want a full history.

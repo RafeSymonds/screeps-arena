@@ -29,7 +29,7 @@ async function findPage(port) {
     );
   }
   const page =
-    targets.find(t => t.type === 'page' && /dist\/index\.html/.test(t.url)) ??
+    targets.find(t => t.type === 'page' && /\/app\/dist\//.test(t.url)) ??
     targets.find(t => t.type === 'page' && !/arena-docs/.test(t.url));
   if (!page) throw new Error(`Debug port ${port} is open but the client window was not found.`);
   return page;
@@ -60,6 +60,13 @@ export async function connect({ port = PORT } = {}) {
     if (msg.error) waiter.reject(new Error(msg.error.message));
     else waiter.resolve(msg.result);
   });
+  // Without this a dropped socket leaves every pending call hanging forever.
+  const failAll = reason => {
+    for (const waiter of pending.values()) waiter.reject(new Error(reason));
+    pending.clear();
+  };
+  socket.addEventListener('close', () => failAll('debug socket closed (did the client quit?)'));
+  socket.addEventListener('error', () => failAll('debug socket error'));
 
   const send = (method, params) =>
     new Promise((resolve, reject) => {
@@ -87,9 +94,16 @@ export async function connect({ port = PORT } = {}) {
    * Call the arena API as the signed-in client. `path` is relative to /api.
    * Returns parsed JSON, or throws with the status and body on failure.
    */
+  // A 100-tick replay chunk of a full Spawn Strike match is ~6 MB, and a value
+  // that size never comes back through Runtime.evaluate (the call just hangs).
+  // So the page parks each response body and hands it over in slices.
+  const SLICE = 512 * 1024;
+  let requestNo = 0;
+
   async function api(path, { method = 'GET', body } = {}) {
+    const key = `__arenaBridge${requestNo++}`;
     const request = JSON.stringify({ url: `${API}${path}`, method, body });
-    const response = await evaluate(`(async () => {
+    const head = await evaluate(`(async () => {
       const r = ${request};
       const init = { method: r.method, credentials: 'include', headers: {} };
       if (r.body !== undefined) {
@@ -97,15 +111,24 @@ export async function connect({ port = PORT } = {}) {
         init.body = JSON.stringify(r.body);
       }
       const res = await fetch(r.url, init);
-      return { status: res.status, text: await res.text() };
+      window[${JSON.stringify(key)}] = await res.text();
+      return { status: res.status, length: window[${JSON.stringify(key)}].length };
     })()`);
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(`${method} ${path} -> ${response.status}: ${response.text.slice(0, 300)}`);
+    let text = '';
+    try {
+      for (let at = 0; at < head.length; at += SLICE) {
+        text += await evaluate(`window[${JSON.stringify(key)}].slice(${at}, ${at + SLICE})`);
+      }
+    } finally {
+      await evaluate(`delete window[${JSON.stringify(key)}]`);
+    }
+    if (head.status < 200 || head.status >= 300) {
+      throw new Error(`${method} ${path} -> ${head.status}: ${text.slice(0, 300)}`);
     }
     try {
-      return JSON.parse(response.text);
+      return JSON.parse(text);
     } catch {
-      return response.text;
+      return text;
     }
   }
 
