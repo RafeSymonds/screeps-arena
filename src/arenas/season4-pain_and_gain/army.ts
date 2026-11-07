@@ -16,7 +16,10 @@ import type { FlagPlan } from './flags';
 import type { State } from './state';
 import { isRunner } from './state';
 import { centroid } from './terrain';
-import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets';
+import { disarmed, focusTarget, healTarget, newTick } from './targets';
+import { multsFor } from './flags';
+import { buildField, favourable, step, threatAt } from './skirmish';
+import type { Fight } from './skirmish';
 
 /**
  * Stronger than the enemy by this much, go and end the match by wiping them.
@@ -76,12 +79,12 @@ export interface Orders {
   mode: Mode;
   target: Position | undefined;
   range: number;
+  /** Clearly stronger: fight whatever the next tick's exchange looks like. */
+  commit?: boolean;
 }
 
 /** Mass attack once the summed falloff of enemies in range reaches this (one adjacent = 1). */
 const MASS_THRESHOLD = 1.8;
-/** How far a ranged creep will walk to get next to an enemy crowd. */
-const CROWD_REACH = 4;
 /** RANGED_ATTACK_DISTANCE_RATE from docs/api/Constants.md, as the mass attack falloff. */
 const MASS_RATE = [1, 1, 0.4, 0.1];
 
@@ -121,8 +124,8 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
       f => f.my === false && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
     );
     const flag = closest(here, theirs);
-    if (flag) return { mode: 'escort', target: flag, range: 0 };
-    return { mode: 'hunt', target: closest(here, enemies), range: 1 };
+    if (flag) return { mode: 'escort', target: flag, range: 0, commit: true };
+    return { mode: 'hunt', target: closest(here, enemies), range: 1, commit: true };
   }
 
   const gap = here ? Math.min(...enemies.map(e => getRange(e, here))) : 0;
@@ -204,11 +207,15 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
   );
 
   newTick(army, enemies);
+  const theirMults = multsFor(s.flags.filter(f => f.my === false));
+  const ourMults = multsFor(s.flags.filter(f => f.my === true));
+  const field = buildField(armed, theirMults, s.myCreeps.concat(s.enemyCreeps));
+  const incoming = (f: Creep) => threatAt(field, f) * ourMults.damageTaken;
   // Melee first: it has the fewest choices, so ranged fire fills in around it.
   const order = army
     .slice()
     .sort((a, b) => Number(countParts(b, ATTACK) > 0) - Number(countParts(a, ATTACK) > 0));
-  for (const c of order) act(c, s);
+  for (const c of order) act(c, s, incoming);
 
   const healers = army.filter(c => countParts(c, HEAL) > 0);
 
@@ -249,17 +256,39 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
         )
       : undefined;
 
-  for (const c of army) {
+  let fight: Fight | undefined;
+  if (contact && focus) {
+    const patients = army.filter(c => !disarmed(c)).sort((a, b) => incoming(b) - incoming(a));
+    const base = { field, enemies: armed, focus, anchor, patients, healers };
+    // Clearly stronger overall, we fight. Otherwise only when the next tick's
+    // exchange favours us: at six times Brac's strength the exchange test
+    // still held us back, because its five ranged could hit our front.
+    fight = { ...base, commit: o.commit === true || favourable(army, base, ourMults) };
+  }
+  // In a fight, the hurt move first (to get out), healers last (to stand by
+  // whoever ends up most exposed).
+  const rank = (c: Creep) =>
+    disarmed(c) || c.hits < c.hitsMax / 2 ? 0 : countParts(c, HEAL) > 0 ? 2 : 1;
+  const movers = fight ? army.slice().sort((a, b) => rank(a) - rank(b)) : army;
+
+  for (const c of movers) {
     if (o.mode === 'cleanup') continue;
     if (c === picket && prey) {
       travelTo(c, prey, matrix, 2);
+      continue;
+    }
+    // The creep sent to take a flag goes, fight or no fight. Left to the
+    // fighting code it never broke off, and the army stood beside an enemy
+    // flag for 700 ticks of a real game at six times the enemy's strength.
+    if (c === capturer && o.target) {
+      travelTo(c, o.target, matrix, 0);
       continue;
     }
 
     // A fighter with no weapons left gets next to a healer, which puts its
     // weapons back. It does not run: fleeing dragged the healers away from the
     // line after it, and its remaining hits still soak fire meant for others.
-    if (disarmed(c)) {
+    if (disarmed(c) && !fight) {
       const biters = meleeEnemies.filter(e => getRange(c, e) <= 1);
       const medic = closest(
         c,
@@ -293,7 +322,7 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
         if (getRange(c, o.target) > o.range) travelTo(c, o.target, matrix, o.range);
         continue;
       }
-      fight(c, s, foe, meleeEnemies, matrix);
+      step(c, fight!);
       continue;
     }
 
@@ -319,39 +348,6 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
   }
 }
 
-/**
- * The enemy within `reach` of `from` with at least two other enemies next to
- * it and the most such neighbours, or undefined if no enemy has two.
- */
-function densest(enemies: readonly Creep[], from: Creep, reach: number): Creep | undefined {
-  let best: Creep | undefined;
-  let most = 2;
-  for (const e of enemies) {
-    if (getRange(from, e) > reach) continue;
-    const n = enemies.filter(o => o !== e && getRange(o, e) <= 1).length;
-    if (n >= most) {
-      most = n;
-      best = e;
-    }
-  }
-  return best;
-}
-
-/** The friend within `range` that most needs healing (see healNeed). */
-function neediest(from: Creep, friends: readonly Creep[], range: number): Creep | undefined {
-  let best: Creep | undefined;
-  let bestNeed = 0;
-  for (const f of friends) {
-    if (getRange(from, f) > range) continue;
-    const need = healNeed(f);
-    if (need > bestNeed) {
-      bestNeed = need;
-      best = f;
-    }
-  }
-  return best;
-}
-
 /** The member nearest the group's centre leads, so nobody gets left behind. */
 function pickAnchor(army: Creep[], target: Position | undefined): Creep {
   const mid = centroid(army)!;
@@ -368,66 +364,12 @@ function pickAnchor(army: Creep[], target: Position | undefined): Creep {
 }
 
 /**
- * Movement once a creep is in the fight. Melee closes; anything with range and
- * no melee keeps out of reach of enemy melee and otherwise holds at three tiles;
- * pure healers keep out of melee reach and otherwise stay next to the most
- * wounded friend.
- */
-function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatrix): void {
-  const hasMelee = countParts(c, ATTACK) > 0;
-  const hasRanged = countParts(c, RANGED_ATTACK) > 0;
-
-  if (hasMelee) {
-    travelTo(c, foe, matrix, 1);
-    return;
-  }
-
-  const meleeClose = melee.filter(e => getRange(c, e) <= 2);
-  if (meleeClose.length > 0) {
-    fleeFrom(c, meleeClose, matrix, 3);
-    return;
-  }
-
-  if (hasRanged) {
-    // Close to a tile of the thickest enemy crowd in reach, where a mass attack
-    // hits all of it at full strength, but only a crowd with no armed melee in
-    // it: walking our ranged up to one cost us two of them to temik911's melee.
-    const crowd = densest(
-      s.enemyCreeps.filter(e => !melee.some(m => getRange(m, e) <= 2)),
-      c,
-      CROWD_REACH,
-    );
-    if (crowd) travelTo(c, crowd, matrix, 1);
-    else if (getRange(c, foe) > 3) travelTo(c, foe, matrix, 3);
-    return;
-  }
-
-  // Stay glued to whoever is taking damage. Hanging back out of the enemy's
-  // ranged reach left our healers five tiles behind the melee line in a rated
-  // loss, too far even for rangedHeal, while the enemy's healers stood two
-  // tiles behind theirs.
-  // With nobody hurt yet, walk in behind the front line; standing still here
-  // left healers behind when the armies met.
-  const patient =
-    neediest(c, s.myCreeps, 8) ??
-    closest(
-      c,
-      s.myCreeps.filter(f => f !== c && countParts(f, ATTACK) > 0),
-    ) ??
-    closest(
-      c,
-      s.myCreeps.filter(f => f !== c && !isRunner(f)),
-    );
-  if (patient && getRange(c, patient) > 1) travelTo(c, patient, matrix, 1);
-}
-
-/**
  * Every creep acts every tick, whatever it is doing with its legs. The
  * conflicts that matter (docs/api/Creep.md): `heal` cannot share a tick with
  * `attack` or `rangedHeal`; `rangedHeal` cannot share one with `attack`,
  * `rangedAttack` or `rangedMassAttack`. `heal` and `rangedAttack` can.
  */
-function act(c: Creep, s: State): void {
+function act(c: Creep, s: State, incoming: (f: Creep) => number): void {
   let attacked = false;
   let shot = false;
 
@@ -456,10 +398,10 @@ function act(c: Creep, s: State): void {
 
   const heal = countParts(c, HEAL) * HEAL_POWER;
   if (heal > 0 && !attacked) {
-    const close = healTarget(c, s.myCreeps, 1, heal);
+    const close = healTarget(c, s.myCreeps, 1, heal, incoming);
     if (close) c.heal(close);
     else if (!shot) {
-      const far = healTarget(c, s.myCreeps, 3, heal / 3);
+      const far = healTarget(c, s.myCreeps, 3, heal / 3, incoming);
       if (far) c.rangedHeal(far);
     }
   }
