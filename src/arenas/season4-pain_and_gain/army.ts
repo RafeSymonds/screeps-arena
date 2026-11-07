@@ -45,6 +45,10 @@ const EVADE_MIN_GAP = 8;
 const CONTACT_RANGE = 8;
 /** Guarding, enemies further than this from the flag are left to come to us. */
 const GUARD_LEASH = 4;
+/** Enemy scouts this close to a flag of ours draw a picket. */
+const PICKET_RANGE = 8;
+/** ...unless an armed enemy is this close to the scout. */
+const PICKET_SAFE = 10;
 /** In a fight, members further than this from the centre close up before engaging. */
 const REJOIN_RANGE = 7;
 
@@ -217,6 +221,26 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
     (getRange(anchor, focus) <= CONTACT_RANGE ||
       army.some(c => !disarmed(c) && armed.some(e => getRange(c, e) <= 3)));
 
+  // One ranged creep peels off for an enemy scout heading for, or sitting on,
+  // a flag on our side, as long as nothing armed is escorting it. Katterton
+  // beat us on score by walking scouts round our army onto the flags behind
+  // it: a scout has 100 hits, two shots.
+  const owned = s.flags.filter(f => f.my === true);
+  const prowlers = s.enemyCreeps.filter(
+    e =>
+      !isArmed(e) &&
+      owned.some(f => getRange(e, f) <= PICKET_RANGE) &&
+      !armed.some(a => getRange(a, e) <= PICKET_SAFE),
+  );
+  const prey = prowlers[0];
+  const picket = prey
+    ? closest(
+        prey,
+        army.filter(
+          c => countParts(c, RANGED_ATTACK) > 0 && countParts(c, ATTACK) === 0 && !disarmed(c),
+        ),
+      )
+    : undefined;
   const capturer =
     o.mode === 'escort' && o.target
       ? closest(
@@ -227,6 +251,10 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
 
   for (const c of army) {
     if (o.mode === 'cleanup') continue;
+    if (c === picket && prey) {
+      travelTo(c, prey, matrix, 2);
+      continue;
+    }
 
     // A fighter with no weapons left gets next to a healer, which puts its
     // weapons back. It does not run: fleeing dragged the healers away from the
