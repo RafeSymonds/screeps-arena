@@ -4,7 +4,8 @@ import { getObjectsByPrototype, getRange, getTicks } from 'game/utils';
 import { isArmed } from '../../lib/body';
 import { arenaInfo } from 'game';
 import { ScoreFlag } from 'arena/season_4/pain_and_gain/basic';
-import { bornUnarmed } from './targets';
+import { HEAL } from 'game/constants';
+import { bornUnarmed, disarmed } from './targets';
 
 /** The whole match budget. Read from the sandbox, with the documented value as fallback. */
 export const TICKS_LIMIT = arenaInfo.ticksLimit || 2000;
@@ -32,6 +33,8 @@ export interface State {
    * only beat it by leaving the centre alone and sitting on a far flag.
    */
   centreContest: boolean | undefined;
+  /** Whether any of our creeps can still heal. */
+  canHeal: boolean;
 }
 
 const CONTEST_RANGE = 15;
@@ -86,15 +89,19 @@ export function state(): State {
     myRate,
     enemyRate,
     centreContest,
+    canHeal: myCreeps.some(c => c.body.some(p => p.type === HEAL && p.hits > 0)),
   };
   return cache;
 }
 
 /**
- * A creep built with nothing to fight or heal with: the scouts. These capture
- * flags. A fighter that has lost its weapons is not one; it stays with the army
- * to be healed back into the fight.
+ * A creep that captures flags rather than fights: the scouts, built with
+ * nothing to fight or heal with. A fighter that has lost its weapons stays with
+ * the army to be healed back into the fight, but only while something can heal
+ * it. With every healer gone it never fights again, and it is still a pair of
+ * legs: in rated losses to Morrowind, ten such creeps stood guarding a flag for
+ * 800 ticks while the enemy scored on all seven.
  */
-export function isRunner(c: Creep): boolean {
-  return bornUnarmed(c);
+export function isRunner(c: Creep, s: State): boolean {
+  return bornUnarmed(c) || (disarmed(c) && !s.canHeal);
 }

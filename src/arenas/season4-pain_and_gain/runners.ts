@@ -14,7 +14,7 @@ const RUNNER_SAFE = 4;
 const HOLD_UNTIL = 0.5;
 
 export function runnersOf(s: State): Creep[] {
-  return s.myCreeps.filter(isRunner);
+  return s.myCreeps.filter(c => isRunner(c, s));
 }
 
 /**

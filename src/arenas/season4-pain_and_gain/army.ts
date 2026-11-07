@@ -86,7 +86,7 @@ const CROWD_REACH = 4;
 const MASS_RATE = [1, 1, 0.4, 0.1];
 
 export function armyOf(s: State): Creep[] {
-  return s.myCreeps.filter(c => !isRunner(c));
+  return s.myCreeps.filter(c => !isRunner(c, s));
 }
 
 /**
@@ -416,7 +416,7 @@ function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatri
     ) ??
     closest(
       c,
-      s.myCreeps.filter(f => f !== c && !isRunner(f)),
+      s.myCreeps.filter(f => f !== c && !isRunner(f, s)),
     );
   if (patient && getRange(c, patient) > 1) travelTo(c, patient, matrix, 1);
 }
