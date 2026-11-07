@@ -131,20 +131,27 @@ What the arena actually contains, confirmed from a real match:
 a match rather than trusting the above if anything looks off.
 
 `season4-pain_and_gain` — score more than the opponent by tick 2000, or wipe out
-their army. From the server's arena description (client cache), not yet from a
-real match:
+their army. Rules from the server's arena description; layout confirmed from
+real game 6aef6316c816bdd1c0647158 (unrated test vs System):
 
-- 14 pre-set creeps a side. No spawning, energy, construction or replacements.
+- 14 pre-set creeps a side, mirrored: 2 scouts (1 MOVE), 4 melee (8 ATTACK +
+  8 MOVE), 5 ranged (6 RANGED_ATTACK + 6 MOVE), 3 healers (6 HEAL + 6 MOVE).
+  Weapons come first in every body, so a creep below about half its hits has
+  no weapon left. Player 1 starts top-left, player 2 bottom-right.
+- No spawning, energy, construction or replacements.
 - Seven neutral `ScoreFlag`s (`arena/season_4/pain_and_gain/basic`), captured by
   standing on one. Each scores `scorePerTick` for its owner and debuffs the
-  owner's whole army: vulnerability ×1 (5/tick, damage taken ×1.1), heal ×2
-  (4/tick, ×0.75 then ×0.5), attack ×2 and ranged ×2 (3/tick, ×0.8 then ×0.6).
+  owner's whole army. Vulnerability at (49,49): 5/tick, damage taken ×1.1. Heal
+  at (90,8) and (8,90): 4/tick, ×0.75 then ×0.5. Attack at (67,31) and (31,67):
+  3/tick, ×0.8 then ×0.6. Ranged at (13,49) and (85,49): 3/tick, ×0.8 then ×0.6.
   Same-type flags combine by table, not by multiplying.
+- Terrain is randomised per match (it differs from the arena's preview image).
 - The match ends early when an army is gone or a lead can no longer be caught.
-- The sandbox exposes no score; the bot counts it from flag ownership.
-- Creep bodies, flag types per position, and whether terrain is fixed are not
-  known yet. `recon.ts` prints all three on tick 1.
-- The offline simulator does not model this arena.
+- The sandbox exposes no score; the bot counts it from flag ownership. Flags
+  read `my === undefined` until someone captures them.
+- `bin/arena sim --arena season4-pain_and_gain` plays it offline
+  (`tools/sim/pain-and-gain.mjs`), including against the bot itself.
+- In test mode the only opponent offered is System, which does nothing.
 
 ## Recovering arena facts
 

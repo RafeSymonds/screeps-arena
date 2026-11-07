@@ -11,6 +11,7 @@ const MODULES = {
   'game/prototypes': 'prototypes.mjs',
   'game/path-finder': 'path-finder.mjs',
   'game/visual': 'visual.mjs',
+  'arena/season_4/pain_and_gain/basic': 'pain-and-gain.mjs',
 };
 
 export function resolve(specifier, context, next) {

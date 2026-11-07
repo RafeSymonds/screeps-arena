@@ -153,6 +153,23 @@ function loadWorld(data, mySide) {
 export const sideOf = () => ME;
 
 /**
+ * Switch which side `my` is reported relative to. Self-play runs two bots in one
+ * world and flips this before each one's `loop()`.
+ */
+export function setSide(side) {
+  ME = side;
+}
+
+/**
+ * Arena modifiers (Pain and Gain's flag debuffs) hook in here. `state.modify`,
+ * when an arena module sets it, gets `(kind, creep, amount)` with kind one of
+ * attack | ranged | heal | taken, and returns the adjusted amount. Unset, every
+ * amount passes through unchanged.
+ */
+const modified = (kind, creep, amount) =>
+  state.modify ? state.modify(kind, creep, amount) : amount;
+
+/**
  * Put a creep straight onto the board, bypassing the spawn. Used by the ghost
  * opponent, which replays a real opponent's creeps out of a match recording
  * rather than building them.
@@ -171,7 +188,13 @@ export function injectCreep({ owner, body, x, y }) {
     spawning: false,
     exists: true,
     ghost: true,
-    store: { energy: 0, capacity: 0, getUsedCapacity: () => 0, getFreeCapacity: () => 0, getCapacity: () => 0 },
+    store: {
+      energy: 0,
+      capacity: 0,
+      getUsedCapacity: () => 0,
+      getFreeCapacity: () => 0,
+      getCapacity: () => 0,
+    },
   });
   state.objects.push(creep);
   return creep;
@@ -231,42 +254,62 @@ function resolve(target, amount, emit) {
         o.owner === target.owner,
     );
     if (shield) return emit({ target: shield, damage: amount });
+    amount = modified('taken', target, amount);
   }
   emit({ target, damage: amount });
 }
 
-/** Apply everything this tick's actions asked for, then sweep the dead. */
+/**
+ * Apply everything this tick's actions asked for, then sweep the dead.
+ *
+ * Damage and healing on one target are netted over the whole tick, as the real
+ * engine does: a creep dies when its hits minus all damage plus all healing
+ * reaches zero. Applying them one by one instead throws away overkill damage
+ * once a creep hits zero, so a single heal later in the list brought a creep
+ * that took 380 damage on 44 hits back to life, every tick, for the rest of
+ * the match.
+ */
 function settle() {
+  const totals = new Map();
   for (const hit of pending) {
-    const target = hit.target;
-    if (!target.exists) continue;
-    if (hit.heal !== undefined) {
-      if (!(target instanceof P.Creep)) continue;
-      let left = hit.heal;
-      for (const part of target.body) {
-        if (left <= 0) break;
-        const room = C.BODYPART_HITS - part.hits;
-        const give = Math.min(room, left);
-        part.hits += give;
-        left -= give;
-      }
-      target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
+    if (!hit.target.exists) continue;
+    let t = totals.get(hit.target);
+    if (!t) {
+      t = { damage: 0, heal: 0 };
+      totals.set(hit.target, t);
+    }
+    if (hit.heal !== undefined) t.heal += hit.heal;
+    else t.damage += hit.damage;
+  }
+
+  for (const [target, { damage: dealt, heal }] of totals) {
+    if (!(target instanceof P.Creep)) {
+      target.hits -= dealt;
       continue;
     }
-    if (target instanceof P.Creep) {
-      // Damage eats body parts front to back, which is what makes part order
-      // matter: lose every MOVE part first and the creep is stranded for good.
-      let left = hit.damage;
-      for (const part of target.body) {
-        if (left <= 0) break;
-        const bite = Math.min(part.hits, left);
-        part.hits -= bite;
-        left -= bite;
-      }
-      target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
-    } else {
-      target.hits -= hit.damage;
+    if (target.hits - dealt + heal <= 0) {
+      target.hits = 0;
+      continue;
     }
+    // Damage eats body parts front to back, which is what makes part order
+    // matter: lose every MOVE part first and the creep is stranded for good.
+    // Healing then refills from the front, minus whatever overkill it had to
+    // cover first.
+    let left = dealt;
+    for (const part of target.body) {
+      if (left <= 0) break;
+      const bite = Math.min(part.hits, left);
+      part.hits -= bite;
+      left -= bite;
+    }
+    let mend = heal - left;
+    for (const part of target.body) {
+      if (mend <= 0) break;
+      const give = Math.min(C.BODYPART_HITS - part.hits, mend);
+      part.hits += give;
+      mend -= give;
+    }
+    target.hits = target.body.reduce((sum, p) => sum + p.hits, 0);
   }
   pending.length = 0;
   for (const object of state.objects.slice()) {
@@ -291,7 +334,7 @@ P.Creep.prototype.attack = function (target) {
   if (getRange(this, target) > 1) return C.ERR_NOT_IN_RANGE;
   if (intent(this).attacked) return C.ERR_BUSY;
   intent(this).attacked = true;
-  damage(target, parts(this, C.ATTACK) * C.ATTACK_POWER);
+  damage(target, modified('attack', this, parts(this, C.ATTACK) * C.ATTACK_POWER));
   return C.OK;
 };
 
@@ -300,7 +343,7 @@ P.Creep.prototype.rangedAttack = function (target) {
   if (getRange(this, target) > 3) return C.ERR_NOT_IN_RANGE;
   if (intent(this).shot) return C.ERR_BUSY;
   intent(this).shot = true;
-  damage(target, parts(this, C.RANGED_ATTACK) * C.RANGED_ATTACK_POWER);
+  damage(target, modified('ranged', this, parts(this, C.RANGED_ATTACK) * C.RANGED_ATTACK_POWER));
   return C.OK;
 };
 
@@ -314,7 +357,8 @@ P.Creep.prototype.rangedMassAttack = function () {
       continue;
     const range = getRange(this, object);
     if (range > 3) continue;
-    damage(object, Math.floor(parts(this, C.RANGED_ATTACK) * C.RANGED_ATTACK_POWER * rate[range]));
+    const base = Math.floor(parts(this, C.RANGED_ATTACK) * C.RANGED_ATTACK_POWER * rate[range]);
+    damage(object, modified('ranged', this, base));
   }
   return C.OK;
 };
@@ -325,7 +369,7 @@ P.Creep.prototype.heal = function (target) {
   if (getRange(this, target) > 1) return C.ERR_NOT_IN_RANGE;
   if (intent(this).healed || intent(this).attacked) return C.ERR_BUSY;
   intent(this).healed = true;
-  restore(target, parts(this, C.HEAL) * C.HEAL_POWER);
+  restore(target, modified('heal', this, parts(this, C.HEAL) * C.HEAL_POWER));
   return C.OK;
 };
 
@@ -334,7 +378,7 @@ P.Creep.prototype.rangedHeal = function (target) {
   if (getRange(this, target) > 3) return C.ERR_NOT_IN_RANGE;
   if (intent(this).healed || intent(this).attacked || intent(this).shot) return C.ERR_BUSY;
   intent(this).healed = true;
-  restore(target, parts(this, C.HEAL) * C.RANGED_HEAL_POWER);
+  restore(target, modified('heal', this, parts(this, C.HEAL) * C.RANGED_HEAL_POWER));
   return C.OK;
 };
 

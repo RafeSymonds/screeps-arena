@@ -104,6 +104,17 @@ cmd_sim() {
   # the constant stubs so they cannot drift from the vendored docs.
   ARENA_FILTER="$arena" npx rollup -c >/dev/null
   node "$ROOT/tools/sim/gen-constants.mjs" >/dev/null
+  # Pain and Gain has its own runner (flags, scoring, debuffs, self-play).
+  if [[ "$arena" == season4-pain_and_gain ]]; then
+    local args=() skip=""
+    for arg in "$@"; do
+      [[ -n "$skip" ]] && { skip=""; continue; }
+      [[ "$arg" == "--arena" ]] && { skip=1; continue; }
+      args+=("$arg")
+    done
+    node "$ROOT/tools/sim/pain-and-gain.mjs" "${args[@]}"
+    return
+  fi
   node "$ROOT/tools/sim/run.mjs" "$@"
 }
 
@@ -254,6 +265,9 @@ sim options
   --side <1|2>       which end of the map to play (default: both)
   --ticks <n>        tick limit per match (default 2000)
   --trace [--every n]  print positions and flag captures for a single match
+  --arena season4-pain_and_gain  Pain and Gain instead: opponents passive |
+                     greedy | brawler | turtle | mirror (the bot itself),
+                     --game <archived id> to start from that match's map
   A clean sweep is evidence the bot behaves, not proof it wins: the simulator is
   a model of the engine and the opponents are scripts. See tools/sim/README.md.
 
