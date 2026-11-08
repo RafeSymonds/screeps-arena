@@ -98,7 +98,11 @@ try {
     // opponents from your recent rated games, and ones saved with Test Tokens.
     const lists = await api(`/test/codes/${arena._id}`);
     const opponents = [];
-    for (const kind of ['system', 'recent', 'favorites']) {
+    // --code <id>[,<id>…] plays those code ids directly, saved or not.
+    for (const id of (flag('code') ?? '').split(',').filter(Boolean)) {
+      opponents.push({ kind: 'code', name: flag('name') ?? id, codeId: id });
+    }
+    for (const kind of opponents.length ? [] : ['system', 'recent', 'favorites']) {
       for (const entry of lists[kind] ?? []) {
         const name = entry.user?.username ?? '?';
         if (OPPONENT && !name.toLowerCase().includes(OPPONENT.toLowerCase())) continue;

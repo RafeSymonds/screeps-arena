@@ -85,6 +85,8 @@ export interface Orders {
   mode: Mode;
   target: Position | undefined;
   range: number;
+  /** Clearly stronger: posting garrisons on taken flags. */
+  dominant?: boolean;
 }
 
 /** Mass attack once the summed falloff of enemies in range reaches this (one adjacent = 1). */
@@ -95,7 +97,55 @@ const CROWD_REACH = 4;
 const MASS_RATE = [1, 1, 0.4, 0.1];
 
 export function armyOf(s: State): Creep[] {
-  return s.myCreeps.filter(c => !isRunner(c, s));
+  const posted = new Set(garrison.values());
+  return s.myCreeps.filter(c => !isRunner(c, s) && !posted.has(String(c.id)));
+}
+
+/**
+ * Flags we hold with one of our own fighters parked on them, by flag id.
+ * felixnightshade beat us ten games in ten on score while we were two to
+ * twelve times its strength: our one army chased its creeps round the map and
+ * it retook every flag as soon as the army moved on. When we are clearly
+ * stronger, the army walks flag to flag and leaves a creep on each. A fighter
+ * on a flag blocks it, and shoots back.
+ */
+const garrison = new Map<string, string>();
+/** Strength ratio from which the army garrisons flags rather than hunting. */
+const GARRISON_RATIO = 2;
+/** The army keeps at least this many creeps; the rest may be posted. */
+const GARRISON_KEEP = 6;
+/** A posted creep below this share of its hits rejoins the army. */
+const GARRISON_RELEASE = 0.4;
+
+/** Drop posts whose creep died, got hurt, or whose flag is no longer ours. */
+function pruneGarrison(s: State): void {
+  for (const [flagId, creepId] of garrison) {
+    const c = s.myCreeps.find(m => String(m.id) === creepId);
+    const f = s.flags.find(x => String(x.id) === flagId);
+    if (!c || !f || f.my !== true || c.hits < c.hitsMax * GARRISON_RELEASE) garrison.delete(flagId);
+  }
+}
+
+/** Post the fighter standing on each flag we just took, while we are dominant. */
+function postGarrison(s: State, army: readonly Creep[], dominant: boolean): void {
+  if (!dominant) return;
+  for (const f of s.flags) {
+    if (f.my !== true || garrison.has(String(f.id))) continue;
+    if (army.length - garrison.size <= GARRISON_KEEP) return;
+    const c = army.find(m => m.x === f.x && m.y === f.y && isArmed(m));
+    if (c) garrison.set(String(f.id), String(c.id));
+  }
+}
+
+/** Posted creeps fight from their flag and step back onto it if pushed off. */
+function runGarrison(s: State, matrix: CostMatrix): void {
+  for (const [flagId, creepId] of garrison) {
+    const c = s.myCreeps.find(m => String(m.id) === creepId);
+    const f = s.flags.find(x => String(x.id) === flagId);
+    if (!c || !f) continue;
+    act(c, s);
+    if (c.x !== f.x || c.y !== f.y) travelTo(c, f, matrix, 0);
+  }
 }
 
 /**
@@ -123,6 +173,14 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // this way: full armies, both sides parked, the enemy on the centre and 15
   // points a tick to our 10.
   const desperate = plan.margin < 0 && s.tick >= DESPERATE_AFTER && plan.ratio >= DESPERATE_RATIO;
+  // Clearly stronger: take flags one after another and garrison them.
+  if (here && enemies.length > 0 && plan.ratio >= GARRISON_RATIO) {
+    const open = s.flags.filter(
+      f => f.my !== true && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
+    );
+    const flag = closest(here, open);
+    if (flag) return { mode: 'escort', target: flag, range: 0, dominant: true };
+  }
   if (here && enemies.length > 0 && (plan.ratio >= huntAt || desperate)) {
     // Go for their flags rather than their creeps: a flag taken back flips the
     // score straight away, and they have to come to us to defend it. Chasing
@@ -232,8 +290,14 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
 }
 
 export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
+  pruneGarrison(s);
+  postGarrison(s, armyOf(s), o.dominant === true);
   const army = armyOf(s);
-  if (army.length === 0) return;
+  if (army.length === 0) {
+    newTick([], s.enemyCreeps);
+    runGarrison(s, matrix);
+    return;
+  }
   const enemies = s.enemyCreeps;
   const armed = enemies.filter(isArmed);
   const meleeEnemies = enemies.filter(e => meleeDamage(e) > 0);
@@ -247,6 +311,7 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
   );
 
   newTick(army, enemies);
+  runGarrison(s, matrix);
   // Melee first: it has the fewest choices, so ranged fire fills in around it.
   const order = army
     .slice()
