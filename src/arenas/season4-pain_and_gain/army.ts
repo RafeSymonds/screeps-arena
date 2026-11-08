@@ -32,8 +32,15 @@ const HUNT_RATIO = 1.6;
 const HUNT_RATIO_OPEN = 1.25;
 /** Hunting, armed enemies this close to the army are killed before flags are taken. */
 const HUNT_REACH = 12;
-/** When losing on score, attack anyway from this tick... */
-const DESPERATE_AFTER = 600;
+/** A hunt target this far from the army is given up for a nearer one. */
+const HUNT_KEEP = 20;
+/**
+ * When losing on score, attack anyway from this tick. It was 600: against
+ * RickStallion, which guarded each flag with two or three creeps, we sat on
+ * two flags at 1.23 times its strength from tick 300 to 600 while it scored
+ * 18 a tick to our 7.
+ */
+const DESPERATE_AFTER = 200;
 /** ...if not clearly weaker. */
 const DESPERATE_RATIO = 0.9;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
@@ -128,11 +135,20 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     // moved on: we held 3 to 11 points a tick at two to four times its
     // strength, and it scored 15 to 22, for 1400 ticks. A group within reach
     // is the thing to kill, and dead creeps retake nothing.
-    const prey = closest(
-      here,
-      enemies.filter(e => getRange(e, here) <= HUNT_REACH),
-    );
-    if (prey) return { mode: 'hunt', target: prey, range: 1 };
+    // Once chosen, a target is kept until it dies or gets well away: re-picking
+    // every tick sent the army back and forth between RickStallion's small
+    // flag guards for 600 ticks without finishing any of them.
+    const chased = enemies.find(e => String(e.id) === quarry && getRange(e, here) <= HUNT_KEEP);
+    const prey =
+      chased ??
+      closest(
+        here,
+        enemies.filter(e => getRange(e, here) <= HUNT_REACH),
+      );
+    if (prey) {
+      quarry = String(prey.id);
+      return { mode: 'hunt', target: prey, range: 1 };
+    }
     const theirs = s.flags.filter(
       f => f.my === false && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
     );
