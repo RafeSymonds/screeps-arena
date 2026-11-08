@@ -253,6 +253,12 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   return { mode: 'guard', target: anyFlag, range: 3 };
 }
 
+/** Creeps holding a position: they shoot and heal from where they stand. */
+export function holdAndAct(s: State, creeps: readonly Creep[]): void {
+  newTick(creeps, s.enemyCreeps);
+  for (const c of creeps) act(c, s);
+}
+
 /** After losing hits, the army counts as under fire for this many ticks. */
 const FIRE_MEMORY = 10;
 let lastHits = 0;

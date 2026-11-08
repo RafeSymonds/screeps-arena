@@ -123,8 +123,19 @@ function zoneOf(s: State, zone: number): State['flags'] {
   return s.flags.filter(f => !isCentre(f) && (zone === 0) === f.x > f.y);
 }
 
+/**
+ * A creep standing on a flag blocks anyone else from stepping onto it, so a flag
+ * with a fighter parked on it has to be fought for. Left empty, flags changed
+ * hands every 20 to 50 ticks to a lone creep or scout, even at seven times the
+ * enemy's strength: けろびー scored 25 a tick to our 0 at t800 with its army
+ * nearly dead. A group keeps this many creeps moving, and the rest may sit.
+ */
+const MIN_MOBILE = 2;
+
 export interface Squad {
   members: Creep[];
+  /** On a flag of ours and staying there. They still shoot and heal. */
+  parked: Creep[];
   orders: Orders;
 }
 
@@ -161,9 +172,26 @@ export function squads(s: State, plan: FlagPlan): Squad[] {
     const here = centroid(group);
     if (!here) continue;
     const zone = zoneOf(s, zones.get(g)!);
+    const parked: Creep[] = [];
+    for (const c of group) {
+      if (group.length - parked.length <= MIN_MOBILE) break;
+      if (s.flags.some(f => f.my === true && f.x === c.x && f.y === c.y)) parked.push(c);
+    }
+    const mobile = group.filter(c => !parked.includes(c));
     out.push({
-      members: group,
-      orders: squadOrders(s, g, here, group, zone, members, enemies, wanted, claimed),
+      members: mobile,
+      parked,
+      orders: squadOrders(
+        s,
+        g,
+        centroid(mobile) ?? here,
+        mobile,
+        zone,
+        members,
+        enemies,
+        wanted,
+        claimed,
+      ),
     });
   }
   return out;

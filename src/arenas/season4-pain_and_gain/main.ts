@@ -1,5 +1,5 @@
 import { pruneTrips } from '../../lib/movement';
-import { orders, runArmy } from './army';
+import { holdAndAct, orders, runArmy } from './army';
 import type { FlagPlan } from './flags';
 import { planFlags } from './flags';
 import { squads, updateSplit } from './groups';
@@ -59,8 +59,12 @@ export function loop(): void {
   const runnerMatrix = buildMatrix(s, { avoid, dangerCost: 20, dangerRange: 4 });
   const cleanup = o.mode === 'cleanup';
   runRunners(s, plan, runnerMatrix, cleanup ? s.myCreeps : runnersOf(s), cleanup);
-  if (split) for (const t of teams) runArmy(s, t.orders, matrix, t.members);
-  else runArmy(s, o, matrix);
+  if (split) {
+    for (const t of teams) {
+      runArmy(s, t.orders, matrix, t.members);
+      holdAndAct(s, t.parked);
+    }
+  } else runArmy(s, o, matrix);
 
   if (s.tick % REPORT_EVERY === 0) reportProgress(s, plan, teams[0]?.orders ?? o, split);
 }
