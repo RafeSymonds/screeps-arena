@@ -117,6 +117,16 @@ const GARRISON_KEEP = 6;
 /** A posted creep below this share of its hits rejoins the army. */
 const GARRISON_RELEASE = 0.4;
 
+/** True when no group of their armed creeps holds most of them. */
+function scattered(enemies: readonly Creep[]): boolean {
+  const biggest = Math.max(
+    ...enemies.map(e => enemies.filter(o => getRange(o, e) <= SCATTER_RADIUS).length),
+  );
+  return biggest < enemies.length * SCATTER_SHARE;
+}
+const SCATTER_RADIUS = 6;
+const SCATTER_SHARE = 0.6;
+
 /** Drop posts whose creep died, got hurt, or whose flag is no longer ours. */
 function pruneGarrison(s: State): void {
   for (const [flagId, creepId] of garrison) {
@@ -173,8 +183,10 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // this way: full armies, both sides parked, the enemy on the centre and 15
   // points a tick to our 10.
   const desperate = plan.margin < 0 && s.tick >= DESPERATE_AFTER && plan.ratio >= DESPERATE_RATIO;
-  // Clearly stronger: take flags one after another and garrison them.
-  if (here && enemies.length > 0 && plan.ratio >= GARRISON_RATIO) {
+  // Clearly stronger against a scattered enemy: take flags one after another
+  // and garrison them. Only when scattered: against temik911, which keeps its
+  // army in one block, garrisoning dropped our test record from 5 of 10 to 1.
+  if (here && enemies.length > 0 && plan.ratio >= GARRISON_RATIO && scattered(enemies)) {
     const open = s.flags.filter(
       f => f.my !== true && !s.enemyCreeps.some(e => e.x === f.x && e.y === f.y && isArmed(e)),
     );
