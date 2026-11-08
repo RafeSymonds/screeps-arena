@@ -483,14 +483,7 @@ function fight(c: Creep, s: State, foe: Creep, melee: Creep[], matrix: CostMatri
       c,
       s.myCreeps.filter(f => f !== c && !isRunner(f, s)),
     );
-  // Healers stay out of reach: theirs stood 4.4 tiles from us in fights and
-  // ours 3.1, and they lost ours early. Close in only when the patient is
-  // clear of the enemy; otherwise heal from three tiles.
-  const exposed = patient
-    ? s.enemyCreeps.some(e => isArmed(e) && getRange(e, patient) <= 2)
-    : false;
-  if (patient && getRange(c, patient) > (exposed ? 3 : 1))
-    travelTo(c, patient, matrix, exposed ? 3 : 1);
+  if (patient && getRange(c, patient) > 1) travelTo(c, patient, matrix, 1);
 }
 
 /**
