@@ -97,6 +97,9 @@ export function armyOf(s: State): Creep[] {
  * we want but cannot reach with a runner need the army to walk there; a raid
  * on a flag we hold must be met; otherwise sit between the enemy and our flags.
  */
+/** The flag-sitter the army is committed to killing, kept across ticks. */
+let quarry: string | undefined;
+
 export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   const army = armyOf(s);
   const here = centroid(army);
@@ -135,7 +138,18 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     );
     const flag = closest(here, theirs);
     if (flag) return { mode: 'escort', target: flag, range: 0 };
-    return { mode: 'hunt', target: closest(here, enemies), range: 1 };
+    // Every flag is held by an armed creep standing on it. therevilo2018 did
+    // exactly that, one creep per flag, and we wandered between targets at two
+    // to five times its strength, killing four creeps in 1100 ticks while it
+    // scored 25 a tick. Pick one sitter, go and kill it, and do not switch
+    // until it is dead: then its flag is free to take.
+    const sitters = enemies.filter(e =>
+      s.flags.some(f => f.my === false && f.x === e.x && f.y === e.y),
+    );
+    const kept = sitters.find(e => String(e.id) === quarry);
+    const next = kept ?? closest(here, sitters) ?? closest(here, enemies);
+    quarry = next ? String(next.id) : undefined;
+    return { mode: 'hunt', target: next, range: 1 };
   }
 
   const gap = here ? Math.min(...enemies.map(e => getRange(e, here))) : 0;
