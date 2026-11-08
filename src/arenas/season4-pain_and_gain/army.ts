@@ -253,6 +253,17 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   return { mode: 'guard', target: anyFlag, range: 3 };
 }
 
+/**
+ * Weapons sit at the front of every body, so hits taken cost output until the
+ * weapons are gone. In the first 40 ticks of a clash, heiseNberg.0020 took our
+ * melee from 32 attack parts to 6 and kept 18 of its own. A creep that has lost
+ * half its weapons steps back to a healer rather than lose the rest.
+ */
+function halfArmed(c: Creep): boolean {
+  const weapons = c.body.filter(p => p.type === ATTACK || p.type === RANGED_ATTACK);
+  return weapons.length > 0 && weapons.filter(p => p.hits > 0).length * 2 <= weapons.length;
+}
+
 /** Creeps holding a position: they shoot and heal from where they stand. */
 export function holdAndAct(s: State, creeps: readonly Creep[]): void {
   newTick(creeps, s.enemyCreeps);
@@ -346,7 +357,7 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix, army: Creep[] =
     // A fighter with no weapons left gets next to a healer, which puts its
     // weapons back. It does not run: fleeing dragged the healers away from the
     // line after it, and its remaining hits still soak fire meant for others.
-    if (disarmed(c)) {
+    if (disarmed(c) || (s.canHeal && halfArmed(c))) {
       const biters = meleeEnemies.filter(e => getRange(c, e) <= 1);
       const medic = closest(
         c,
