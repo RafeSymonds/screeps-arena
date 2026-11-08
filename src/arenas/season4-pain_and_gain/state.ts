@@ -37,9 +37,6 @@ export interface State {
   canHeal: boolean;
 }
 
-/** Against a centre-racer, stay off the centre until this tick (see army.ts). */
-export const CENTRE_DELAY = 250;
-
 const CONTEST_RANGE = 15;
 const CONTEST_DEADLINE = 120;
 let centreContest: boolean | undefined;
