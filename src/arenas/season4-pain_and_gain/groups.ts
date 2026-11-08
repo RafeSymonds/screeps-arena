@@ -31,7 +31,7 @@ const SPLIT_LARGEST = 6;
 const SPLIT_AFTER = 20;
 const SPLIT_CLUSTERS = 3;
 /** ...and come back together when one group holds this many. */
-const REGROUP_LARGEST = 9;
+const REGROUP_LARGEST = 7;
 /** Below this many fighters a split leaves nothing strong anywhere. */
 const MIN_ARMY = 6;
 /** An armed enemy this close to a group is fought. */
@@ -69,7 +69,7 @@ function armedClusters(enemies: readonly Creep[]): Creep[][] {
 function assign(army: readonly Creep[]): void {
   membership.clear();
   let next = 0;
-  for (const part of [ATTACK, RANGED_ATTACK, HEAL]) {
+  for (const part of [ATTACK, RANGED_ATTACK, HEAL] as const) {
     for (const c of army) {
       if (membership.has(String(c.id)) || countParts(c, part) === 0) continue;
       membership.set(String(c.id), next % 3);
@@ -161,7 +161,10 @@ export function squads(s: State, plan: FlagPlan): Squad[] {
     const here = centroid(group);
     if (!here) continue;
     const zone = zoneOf(s, zones.get(g)!);
-    out.push({ members: group, orders: squadOrders(s, g, here, group, zone, members, enemies, wanted, claimed) });
+    out.push({
+      members: group,
+      orders: squadOrders(s, g, here, group, zone, members, enemies, wanted, claimed),
+    });
   }
   return out;
 }
@@ -191,7 +194,12 @@ function squadOrders(
   if (foe) return { mode: 'hunt', target: foe, range: 1 };
 
   const mine = wanted.filter(f => zone.includes(f) && !claimed.has(f));
-  const flag = closest(here, mine) ?? closest(here, wanted.filter(f => !claimed.has(f)));
+  const flag =
+    closest(here, mine) ??
+    closest(
+      here,
+      wanted.filter(f => !claimed.has(f)),
+    );
   if (flag) {
     claimed.add(flag);
     const sitter = s.enemyCreeps.find(e => e.x === flag.x && e.y === flag.y);
