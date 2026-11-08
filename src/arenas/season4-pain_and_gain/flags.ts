@@ -127,7 +127,7 @@ export interface FlagPlan {
  *
  * Owned flags cannot be given up, so they are always in the set.
  */
-export function planFlags(s: State, total: number): FlagPlan {
+export function planFlags(s: State, total: number, split = false): FlagPlan {
   // Against an enemy contesting the centre (see State.centreContest), the
   // centre flag is always wanted while nobody holds it: the army holds the
   // centre (see army.ts), and holding a position beats attacking one.
@@ -155,7 +155,8 @@ export function planFlags(s: State, total: number): FlagPlan {
     f =>
       f.my !== true &&
       !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y) &&
-      (f === centre || ourSide(f)),
+      // A split army has a group for every part of the map.
+      (split || f === centre || ourSide(f)),
   );
 
   const minRatio = s.remaining < total * LATE_FRACTION ? LATE_MIN_RATIO : MIN_RATIO;
@@ -174,6 +175,7 @@ export function planFlags(s: State, total: number): FlagPlan {
   let bestWin: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
   let bestSafe: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
   let bestRisky: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
+  let bestSplit: { set: ScoreFlag[]; ratio: number; margin: number } | undefined;
 
   for (let mask = 0; mask < 1 << open.length; mask += 1) {
     const take = open.filter((_, i) => mask & (1 << i));
@@ -185,6 +187,9 @@ export function planFlags(s: State, total: number): FlagPlan {
     const ratio = ratioOf(mine, kept);
     if (margin > 0 && ratio >= RISKY_MIN_RATIO && (!bestRisky || ratio > bestRisky.ratio)) {
       bestRisky = { set: mine, ratio, margin };
+    }
+    if (ratio >= RISKY_MIN_RATIO && (!bestSplit || margin > bestSplit.margin)) {
+      bestSplit = { set: mine, ratio, margin };
     }
     // The safety bar is what a set costs our own army, not where it leaves us
     // against theirs. Measured against the enemy, their holding one flag let
@@ -210,7 +215,12 @@ export function planFlags(s: State, total: number): FlagPlan {
   // Two identical bots in a real game sat at 7 a tick each for 1900 ticks and
   // the one that had captured first won by 291.
   const losing = !bestWin && bestSafe!.margin <= 0;
-  const pick = bestWin ?? (losing && s.tick >= PATIENCE && bestRisky ? bestRisky : bestSafe!);
+  // Split, the point is to out-score them, so take the best score above the risky
+  // bar straight away, even if it does not win yet: their lead grows while we wait.
+  const pick =
+    bestWin ??
+    (split && losing ? (bestRisky ?? bestSplit ?? bestSafe!) : undefined) ??
+    (losing && s.tick >= PATIENCE && bestRisky ? bestRisky : bestSafe!);
   const now = strength(s.myCreeps, multsFor(owned));
   return {
     wanted: new Set(pick.set.map(f => String(f.id))),

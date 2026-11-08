@@ -31,11 +31,11 @@ export function reportArena(s: State): void {
   for (const c of s.enemyCreeps) console.log(`enemy ${c.id} ${at(c)} ${bodyOf(c)} hits=${c.hits}`);
 }
 
-export function reportProgress(s: State, plan: FlagPlan, o: Orders): void {
+export function reportProgress(s: State, plan: FlagPlan, o: Orders, split = false): void {
   console.log(
     `t${s.tick} score ${s.myScore}-${s.enemyScore} (+${s.myRate}/+${s.enemyRate}) ` +
       `creeps ${s.myCreeps.length}v${s.enemyCreeps.length} ratio ${plan.ratio.toFixed(2)} ` +
-      `want ${plan.wanted.size} margin ${Math.round(plan.margin)} mode ${o.mode}` +
+      `want ${plan.wanted.size} margin ${Math.round(plan.margin)} ${split ? 'split ' : ''}mode ${o.mode}` +
       (o.target ? ` -> ${at(o.target)}` : ''),
   );
 }

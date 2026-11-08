@@ -2,6 +2,7 @@ import { pruneTrips } from '../../lib/movement';
 import { orders, runArmy } from './army';
 import type { FlagPlan } from './flags';
 import { planFlags } from './flags';
+import { squads, updateSplit } from './groups';
 import { reportArena, reportProgress } from './recon';
 import { runRunners, runnersOf } from './runners';
 import { state, TICKS_LIMIT } from './state';
@@ -37,9 +38,10 @@ export function loop(): void {
 
   // Re-planning every tick lets the wanted set flicker as hit points change,
   // which sends runners back and forth. Hold it until something real happens.
-  const key = s.flags.map(f => String(f.my)).join(',');
+  const split = updateSplit(s);
+  const key = `${split},${s.flags.map(f => String(f.my)).join(',')}`;
   if (!plan || key !== planKey || s.tick - plannedAt >= REPLAN_EVERY) {
-    plan = planFlags(s, TICKS_LIMIT);
+    plan = planFlags(s, TICKS_LIMIT, split);
     planKey = key;
     plannedAt = s.tick;
   }
@@ -48,12 +50,17 @@ export function loop(): void {
 
   // Anything not in the plan is a flag nobody should blunder onto, except the
   // one the army has been sent to take.
-  const avoid = s.flags.filter(f => !plan!.wanted.has(String(f.id)) && f !== o.target);
+  const teams = split ? squads(s, plan) : [];
+  const avoid = s.flags.filter(
+    f =>
+      !plan!.wanted.has(String(f.id)) && f !== o.target && !teams.some(t => t.orders.target === f),
+  );
   const matrix = buildMatrix(s, { avoid });
   const runnerMatrix = buildMatrix(s, { avoid, dangerCost: 20, dangerRange: 4 });
   const cleanup = o.mode === 'cleanup';
   runRunners(s, plan, runnerMatrix, cleanup ? s.myCreeps : runnersOf(s), cleanup);
-  runArmy(s, o, matrix);
+  if (split) for (const t of teams) runArmy(s, t.orders, matrix, t.members);
+  else runArmy(s, o, matrix);
 
-  if (s.tick % REPORT_EVERY === 0) reportProgress(s, plan, o);
+  if (s.tick % REPORT_EVERY === 0) reportProgress(s, plan, teams[0]?.orders ?? o, split);
 }

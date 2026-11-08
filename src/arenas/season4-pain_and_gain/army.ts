@@ -253,8 +253,12 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   return { mode: 'guard', target: anyFlag, range: 3 };
 }
 
-export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
-  const army = armyOf(s);
+export function runArmy(
+  s: State,
+  o: Orders,
+  matrix: CostMatrix,
+  army: Creep[] = armyOf(s),
+): void {
   if (army.length === 0) return;
   const enemies = s.enemyCreeps;
   const armed = enemies.filter(isArmed);
@@ -377,6 +381,12 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       if (spread > GROUP_RADIUS + 2 && getRange(c, o.target) > o.range) continue;
       travelTo(c, o.target, matrix, o.range);
     } else if (getRange(c, anchor) > 2) {
+      // Ahead of the leader, wait for it. Walking back to it and then on
+      // toward the target again froze a real army for 600 ticks: half the
+      // members stepped back and forth every tick, and on the ticks they
+      // stood in front of the leader it could not move either.
+      const ahead = getRange(c, o.target) < getRange(anchor, o.target);
+      if (ahead && getRange(c, anchor) <= GROUP_RADIUS) continue;
       travelTo(c, anchor, matrix, 1);
     } else {
       travelTo(c, o.target, matrix, Math.max(o.range, 2));
