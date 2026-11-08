@@ -112,34 +112,6 @@ let home: Position | undefined;
 /** The flag-sitter the army is committed to killing, kept across ticks. */
 let quarry: string | undefined;
 
-/**
- * Every creep in this arena moves one tile a tick on plain ground, so one that
- * keeps walking away is never caught. felixnightshade (rank 2) beat us 75
- * games of 81 that way without ever being wiped: its small groups walked off
- * as our army came, we chased them round the map at two to seven times their
- * strength, and it held all seven flags. A chase that has not closed the gap
- * in this many ticks is given up...
- */
-const CHASE_PATIENCE = 20;
-/** ...and that creep is not chased again for this long. */
-const CHASE_COOLDOWN = 150;
-let chase: { id: string; best: number; since: number } | undefined;
-const uncatchable = new Map<string, number>();
-
-/** Track progress on the current quarry; returns false once it is not worth chasing. */
-function worthChasing(prey: Creep, here: Position, tick: number): boolean {
-  const id = String(prey.id);
-  const gap = getRange(prey, here);
-  if (!chase || chase.id !== id) chase = { id, best: gap, since: tick };
-  else if (gap < chase.best) Object.assign(chase, { best: gap, since: tick });
-  if (gap > 3 && tick - chase.since > CHASE_PATIENCE) {
-    uncatchable.set(id, tick + CHASE_COOLDOWN);
-    chase = undefined;
-    return false;
-  }
-  return true;
-}
-
 export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   const army = armyOf(s);
   const here = centroid(army);
@@ -172,16 +144,14 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     // Once chosen, a target is kept until it dies or gets well away: re-picking
     // every tick sent the army back and forth between RickStallion's small
     // flag guards for 600 ticks without finishing any of them.
-    for (const [id, until] of uncatchable) if (until <= s.tick) uncatchable.delete(id);
-    const catchable = enemies.filter(e => !uncatchable.has(String(e.id)));
-    const chased = catchable.find(e => String(e.id) === quarry && getRange(e, here) <= HUNT_KEEP);
+    const chased = enemies.find(e => String(e.id) === quarry && getRange(e, here) <= HUNT_KEEP);
     const prey =
       chased ??
       closest(
         here,
-        catchable.filter(e => getRange(e, here) <= HUNT_REACH),
+        enemies.filter(e => getRange(e, here) <= HUNT_REACH),
       );
-    if (prey && worthChasing(prey, here, s.tick)) {
+    if (prey) {
       quarry = String(prey.id);
       return { mode: 'hunt', target: prey, range: 1 };
     }
@@ -195,11 +165,11 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
     // to five times its strength, killing four creeps in 1100 ticks while it
     // scored 25 a tick. Pick one sitter, go and kill it, and do not switch
     // until it is dead: then its flag is free to take.
-    const sitters = catchable.filter(e =>
+    const sitters = enemies.filter(e =>
       s.flags.some(f => f.my === false && f.x === e.x && f.y === e.y),
     );
     const kept = sitters.find(e => String(e.id) === quarry);
-    const next = kept ?? closest(here, sitters) ?? closest(here, catchable) ?? closest(here, enemies);
+    const next = kept ?? closest(here, sitters) ?? closest(here, enemies);
     quarry = next ? String(next.id) : undefined;
     return { mode: 'hunt', target: next, range: 1 };
   }
@@ -407,12 +377,6 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
       if (spread > GROUP_RADIUS + 2 && getRange(c, o.target) > o.range) continue;
       travelTo(c, o.target, matrix, o.range);
     } else if (getRange(c, anchor) > 2) {
-      // Ahead of the leader, wait for it. Walking back to it and then on
-      // toward the target again froze a real army for 600 ticks: half the
-      // members stepped back and forth every tick, and on the ticks they
-      // stood in front of the leader it could not move either.
-      const ahead = getRange(c, o.target) < getRange(anchor, o.target);
-      if (ahead && getRange(c, anchor) <= GROUP_RADIUS) continue;
       travelTo(c, anchor, matrix, 1);
     } else {
       travelTo(c, o.target, matrix, Math.max(o.range, 2));
