@@ -14,7 +14,7 @@ import { countParts, isArmed, meleeDamage, rangedDamage } from '../../lib/body';
 import { fleeFrom, travelTo } from '../../lib/movement';
 import type { FlagPlan } from './flags';
 import type { State } from './state';
-import { isRunner } from './state';
+import { CENTRE_DELAY, isRunner } from './state';
 import { centroid } from './terrain';
 import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets';
 
@@ -104,12 +104,18 @@ export function armyOf(s: State): Creep[] {
  * we want but cannot reach with a runner need the army to walk there; a raid
  * on a flag we hold must be met; otherwise sit between the enemy and our flags.
  */
+/** How far back from the centre, toward our start, to hold meanwhile. */
+const HOLD_BACK = 15;
+/** Where our army started, for "our side". */
+let home: Position | undefined;
+
 /** The flag-sitter the army is committed to killing, kept across ticks. */
 let quarry: string | undefined;
 
 export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   const army = armyOf(s);
   const here = centroid(army);
+  home ??= here;
   const enemies = s.enemyCreeps.filter(isArmed);
   const enemyCenter = centroid(enemies);
   const owned = s.flags.filter(f => f.my === true);
@@ -211,6 +217,22 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // Until we know the enemy is leaving the centre alone, head there: against
   // one racing for it, arriving second loses.
   const centre = s.flags.find(f => f.effectType === EFF_DAMAGE_TAKEN_MODIFIER && f.my !== false);
+  // Against a centre-racer, do not meet it there in the opening. Against
+  // temik911 we lost 3 of 4 games where the armies first clashed around tick
+  // 75 and won 4 of 6 where the first clash came after tick 250, by which
+  // time it had spread out and weakened itself taking flags. Hold a position
+  // fifteen tiles back on our side until then.
+  if (centre && s.centreContest === true && s.tick < CENTRE_DELAY && home) {
+    const back = {
+      x: Math.round(
+        centre.x + ((home.x - centre.x) * HOLD_BACK) / Math.max(1, getRange(home, centre)),
+      ),
+      y: Math.round(
+        centre.y + ((home.y - centre.y) * HOLD_BACK) / Math.max(1, getRange(home, centre)),
+      ),
+    };
+    return { mode: 'guard', target: back, range: 2 };
+  }
   if (centre && s.centreContest !== false) {
     // Not yet ours but wanted: one creep steps onto it and the rest stand off.
     // Guarding at two tiles ringed it with our own army, and our scout stood

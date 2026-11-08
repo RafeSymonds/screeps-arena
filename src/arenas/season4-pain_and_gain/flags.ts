@@ -14,6 +14,7 @@ import { getRange } from 'game/utils';
 import { countParts, isArmed } from '../../lib/body';
 import { centroid } from './terrain';
 import type { State } from './state';
+import { CENTRE_DELAY } from './state';
 
 /**
  * Multiplier for 0, 1, 2 flags of a type, from the arena description and
@@ -136,7 +137,9 @@ export function planFlags(s: State, total: number): FlagPlan {
       f.my === undefined &&
       !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
   );
-  const owned = s.flags.filter(f => f.my === true || (s.centreContest === true && f === centre));
+  const owned = s.flags.filter(
+    f => f.my === true || (s.centreContest === true && s.tick >= CENTRE_DELAY && f === centre),
+  );
   const theirs = s.flags.filter(f => f.my === false);
   // A creep standing on a flag blocks anyone else from stepping onto it, and
   // both sides park scouts on the flags they hold. Counting such a flag as
