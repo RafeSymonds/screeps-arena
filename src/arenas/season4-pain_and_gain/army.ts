@@ -69,12 +69,6 @@ const UNBLOCK_SAFE = 15;
  * and pulled our army out of the centre into its block.
  */
 const RAID_RANGE = 3;
-/** Their army's centre closing within this of ours, we stop and close up. */
-const BRACE_RANGE = 16;
-/** Bracing, members stand within this of the anchor. */
-const BRACE_TIGHT = 2;
-/** Distance between the armies last tick, to tell whether they are closing. */
-let lastGap = Infinity;
 /** Escorting a capture, everyone but the capturer stays this far from the flag. */
 const ESCORT_STANDOFF = 3;
 /** How far the leader lets the group spread before it waits. */
@@ -291,12 +285,6 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
     focus !== undefined &&
     (getRange(anchor, focus) <= CONTACT_RANGE ||
       army.some(c => !disarmed(c) && armed.some(e => getRange(c, e) <= 3)));
-  const theirCentre = centroid(armed);
-  const gap = theirCentre ? getRange(anchor, theirCentre) : Infinity;
-  const closing = gap < lastGap;
-  lastGap = gap;
-  const bracing =
-    !contact && o.mode !== 'hunt' && o.mode !== 'escort' && closing && gap <= BRACE_RANGE;
 
   // One ranged creep peels off for an enemy scout heading for, or sitting on,
   // a flag on our side, as long as nothing armed is escorting it. Katterton
@@ -371,15 +359,6 @@ export function runArmy(s: State, o: Orders, matrix: CostMatrix): void {
         continue;
       }
       fight(c, s, foe, meleeEnemies, matrix);
-      continue;
-    }
-
-    // Their army is coming and not yet in reach: stop and close up around the
-    // anchor rather than keep walking. heiseNberg.0020 hunts our army; in every
-    // test game it caught us strung out on the move between positions and won
-    // the fight, 10 games of 10.
-    if (bracing) {
-      if (getRange(c, anchor) > BRACE_TIGHT) travelTo(c, anchor, matrix, 1);
       continue;
     }
 
