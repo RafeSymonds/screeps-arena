@@ -14,7 +14,7 @@ import { countParts, isArmed, meleeDamage, rangedDamage } from '../../lib/body';
 import { fleeFrom, travelTo } from '../../lib/movement';
 import type { FlagPlan } from './flags';
 import type { State } from './state';
-import { isRunner } from './state';
+import { CENTRE_DELAY, isRunner } from './state';
 import { centroid } from './terrain';
 import { disarmed, focusTarget, healNeed, healTarget, newTick } from './targets';
 
@@ -221,8 +221,8 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   // temik911 we lost 3 of 4 games where the armies first clashed around tick
   // 75 and won 4 of 6 where the first clash came after tick 250, by which
   // time it had spread out and weakened itself taking flags. Hold a position
-  // fifteen tiles back on our side, and let them carry the centre's debuff.
-  if (centre && s.centreContest === true && home) {
+  // fifteen tiles back on our side until then.
+  if (centre && s.centreContest === true && s.tick < CENTRE_DELAY && home) {
     const back = {
       x: Math.round(
         centre.x + ((home.x - centre.x) * HOLD_BACK) / Math.max(1, getRange(home, centre)),

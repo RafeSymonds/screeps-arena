@@ -14,6 +14,7 @@ import { getRange } from 'game/utils';
 import { countParts, isArmed } from '../../lib/body';
 import { centroid } from './terrain';
 import type { State } from './state';
+import { CENTRE_DELAY } from './state';
 
 /**
  * Multiplier for 0, 1, 2 flags of a type, from the arena description and
@@ -99,13 +100,8 @@ const LATE_FRACTION = 0.1;
  * opponent may still come to fight, and most of the match is left to answer.
  */
 const PATIENCE = 150;
-/**
- * How weak we will go to turn a losing score into a winning one. Over 92 rated
- * games, going into the big fight holding the centre flag won 13 of 30, and
- * without it 33 of 62. Flags are debuffs, so a flag that leaves us weaker than
- * they are is not taken.
- */
-const RISKY_MIN_RATIO = 1;
+/** How much weaker we will go to turn a losing score into a winning one. */
+const RISKY_MIN_RATIO = 0.75;
 
 export interface FlagPlan {
   /** Flags we want to own. Includes the ones we already do. */
@@ -132,7 +128,9 @@ export interface FlagPlan {
  * Owned flags cannot be given up, so they are always in the set.
  */
 export function planFlags(s: State, total: number, split = false): FlagPlan {
-  // The centre flag, while nobody holds it or stands on it.
+  // Against an enemy contesting the centre (see State.centreContest), the
+  // centre flag is always wanted while nobody holds it: the army holds the
+  // centre (see army.ts), and holding a position beats attacking one.
   const centre = s.flags.find(
     f =>
       f.effectType === EFF_DAMAGE_TAKEN_MODIFIER &&
@@ -140,7 +138,7 @@ export function planFlags(s: State, total: number, split = false): FlagPlan {
       !s.enemyCreeps.some(c => c.x === f.x && c.y === f.y),
   );
   const owned = s.flags.filter(
-    f => f.my === true,
+    f => f.my === true || (s.centreContest === true && s.tick >= CENTRE_DELAY && f === centre),
   );
   const theirs = s.flags.filter(f => f.my === false);
   // A creep standing on a flag blocks anyone else from stepping onto it, and
