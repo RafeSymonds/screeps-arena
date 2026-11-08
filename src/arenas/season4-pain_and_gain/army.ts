@@ -253,12 +253,23 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
   return { mode: 'guard', target: anyFlag, range: 3 };
 }
 
-export function runArmy(
-  s: State,
-  o: Orders,
-  matrix: CostMatrix,
-  army: Creep[] = armyOf(s),
-): void {
+/** After losing hits, the army counts as under fire for this many ticks. */
+const FIRE_MEMORY = 10;
+let lastHits = 0;
+let lastHitsTick = -1;
+let hitAt = -Infinity;
+
+function underFire(s: State): boolean {
+  if (lastHitsTick !== s.tick) {
+    const hits = s.myCreeps.reduce((sum, c) => sum + c.hits, 0);
+    if (lastHitsTick >= 0 && hits < lastHits) hitAt = s.tick;
+    lastHits = hits;
+    lastHitsTick = s.tick;
+  }
+  return s.tick - hitAt <= FIRE_MEMORY;
+}
+
+export function runArmy(s: State, o: Orders, matrix: CostMatrix, army: Creep[] = armyOf(s)): void {
   if (army.length === 0) return;
   const enemies = s.enemyCreeps;
   const armed = enemies.filter(isArmed);
@@ -272,6 +283,7 @@ export function runArmy(
       .map(c => getRange(c, anchor)),
   );
 
+  underFire(s);
   newTick(army, enemies);
   // Melee first: it has the fewest choices, so ranged fire fills in around it.
   const order = army
@@ -358,7 +370,17 @@ export function runArmy(
       // flag to go after an enemy holding position a few tiles off. Doing
       // that walked us into temik911's held block from the centre we had
       // just taken.
-      if (o.mode === 'guard' && o.target && getRange(foe, o.target) > GUARD_LEASH) {
+      //
+      // Unless it is shooting us. heiseNberg.0020 and ●ω<♥♪ stand off the
+      // leash and fire: our army moved one to three tiles in the 30 ticks after
+      // first contact, 2 of 5 ranged and almost no melee were in reach, and our
+      // melee took 2646 hits to their 777.
+      if (
+        o.mode === 'guard' &&
+        o.target &&
+        getRange(foe, o.target) > GUARD_LEASH &&
+        !underFire(s)
+      ) {
         if (getRange(c, o.target) > o.range) travelTo(c, o.target, matrix, o.range);
         continue;
       }
