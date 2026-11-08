@@ -45,6 +45,11 @@ const DESPERATE_AFTER = 200;
 const DESPERATE_RATIO = 0.9;
 /** Weaker than this while ahead on score, stay out of their reach and run the clock. */
 const EVADE_RATIO = 0.7;
+/** An enemy army closing on ours for this many ticks within HUNTED_RANGE is hunting us. */
+const HUNTED_TICKS = 4;
+const HUNTED_RANGE = 16;
+let hunted = 0;
+let lastHuntGap = Infinity;
 /**
  * Evading only works from a distance. Turning to run from an enemy already in
  * range hands it free shots at our backs, so inside this we fight instead.
@@ -176,6 +181,15 @@ export function orders(s: State, plan: FlagPlan, runnersAlive: number): Orders {
 
   const gap = here ? Math.min(...enemies.map(e => getRange(e, here))) : 0;
   if (here && enemyCenter && plan.ratio < EVADE_RATIO && comfortablyAhead && gap > EVADE_MIN_GAP) {
+    return { mode: 'evade', target: enemyCenter, range: 0 };
+  }
+  // Being hunted by an army we cannot clearly beat: keep away from it while
+  // the scouts score. heiseNberg.0020 walks its army at ours from tick 40 and
+  // won every fight it got, 10 test games of 10.
+  const huntedNow = gap < lastHuntGap && gap > EVADE_MIN_GAP && gap <= HUNTED_RANGE;
+  lastHuntGap = gap;
+  hunted = huntedNow ? hunted + 1 : Math.max(0, hunted - 1);
+  if (here && enemyCenter && plan.ratio < HUNT_RATIO_OPEN && hunted >= HUNTED_TICKS) {
     return { mode: 'evade', target: enemyCenter, range: 0 };
   }
 
