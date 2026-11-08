@@ -53,6 +53,10 @@ const reach = new Map<Creep, number>();
  * Enemy healers land in the same tick, so a little overkill is insurance.
  */
 const OVERKILL = 150;
+/** Base worth of killing any creep, armed or not, on the output scale. */
+const KILL_WORTH = 120;
+/** Extra worth of a creep built to heal. */
+const HEALER_WORTH = 100;
 
 export function newTick(army: readonly Creep[], enemies: readonly Creep[]): void {
   planned.clear();
@@ -93,10 +97,16 @@ export function focusTarget(
     if (getRange(from, e) > range) continue;
     const left = e.hits - (planned.get(e) ?? 0);
     // Fraction of the target our army can remove this tick, times what it is
-    // worth. Unarmed creeps still count a little, so stragglers get finished.
+    // worth. A creep with no weapons left is still worth killing: alive, its
+    // healers put its weapons back. heiseNberg.0020 and ●ω<♥♪, which beat us
+    // nearly every game, spend 37% of their shots on our disarmed creeps and
+    // shoot targets already down to 60% health on average, while we shot
+    // fresh targets at 86% and almost never finished one. They also put 28%
+    // of their shots into our healers, against our 0 to 9%.
     const share = Math.min(1, (reach.get(e) ?? damage) / Math.max(1, left));
+    const worth = outputOf(e) + KILL_WORTH + (e.body.some(p => p.type === HEAL) ? HEALER_WORTH : 0);
     // Already dead with margin to spare: only if nothing else is in reach.
-    const score = left < -OVERKILL ? -1 : (outputOf(e) + 10) * share;
+    const score = left < -OVERKILL ? -1 : worth * share;
     if (score > bestScore) {
       bestScore = score;
       best = e;
